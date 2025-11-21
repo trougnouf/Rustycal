@@ -8,7 +8,8 @@ use crate::model::Task;
 use crate::ui::{AppState, draw};
 use anyhow::Result;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    // Add MouseEventKind to the list
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, MouseEventKind},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -266,75 +267,102 @@ async fn main() -> Result<()> {
             }
         }
 
+        // 2. Process User Input
         if crossterm::event::poll(Duration::from_millis(50))? {
-            if let Event::Key(key) = event::read()? {
-                if app_state.show_input {
-                    match key.code {
-                        KeyCode::Enter => {
-                            if !app_state.input_buffer.is_empty() {
-                                let summary = app_state.input_buffer.clone();
-                                let _ = action_tx.send(Action::CreateTask(summary)).await;
-                                app_state.input_buffer.clear();
-                                app_state.show_input = false;
-                            }
-                        }
-                        KeyCode::Esc => {
-                            app_state.show_input = false;
-                            app_state.input_buffer.clear();
-                        }
-                        KeyCode::Char(c) => {
-                            app_state.input_buffer.push(c);
-                        }
-                        KeyCode::Backspace => {
-                            app_state.input_buffer.pop();
-                        }
-                        _ => {}
-                    }
-                } else {
-                    match key.code {
-                        KeyCode::Char('q') => {
-                            let _ = action_tx.send(Action::Quit).await;
-                            break;
-                        }
-                        KeyCode::Char('a') => {
-                            app_state.show_input = true;
-                            app_state.message = "Example: Buy Milk @tomorrow !1".to_string();
-                        }
-                        KeyCode::Down | KeyCode::Char('j') => app_state.next(),
-                        KeyCode::Up | KeyCode::Char('k') => app_state.previous(),
-                        KeyCode::Char(' ') => {
-                            if let Some(idx) = app_state.list_state.selected() {
-                                if idx < app_state.tasks.len() {
-                                    app_state.tasks[idx].completed =
-                                        !app_state.tasks[idx].completed;
-                                    let _ = action_tx.send(Action::ToggleTask(idx)).await;
-                                }
-                            }
-                        }
-                        KeyCode::Char('d') => {
-                            if let Some(idx) = app_state.list_state.selected() {
-                                if idx < app_state.tasks.len() {
-                                    let _ = action_tx.send(Action::DeleteTask(idx)).await;
-                                }
-                            }
-                        }
-                        KeyCode::Char('+') => {
-                            if let Some(idx) = app_state.list_state.selected() {
-                                if idx < app_state.tasks.len() {
-                                    let _ = action_tx.send(Action::ChangePriority(idx, 1)).await;
-                                }
-                            }
-                        }
-                        KeyCode::Char('-') => {
-                            if let Some(idx) = app_state.list_state.selected() {
-                                if idx < app_state.tasks.len() {
-                                    let _ = action_tx.send(Action::ChangePriority(idx, -1)).await;
-                                }
-                            }
-                        }
+            let event = event::read()?; // Read event once
+
+            match event {
+                // --- MOUSE HANDLING ---
+                Event::Mouse(mouse_event) => {
+                    match mouse_event.kind {
+                        MouseEventKind::ScrollDown => app_state.next(), // Scroll down = Next Item
+                        MouseEventKind::ScrollUp => app_state.previous(), // Scroll up = Prev Item
                         _ => {}
                     }
                 }
+
+                // --- KEYBOARD HANDLING ---
+                Event::Key(key) => {
+                    if app_state.show_input {
+                        // --- INPUT MODE ---
+                        match key.code {
+                            KeyCode::Enter => {
+                                if !app_state.input_buffer.is_empty() {
+                                    let summary = app_state.input_buffer.clone();
+                                    let _ = action_tx.send(Action::CreateTask(summary)).await;
+                                    app_state.input_buffer.clear();
+                                    app_state.show_input = false;
+                                }
+                            }
+                            KeyCode::Esc => {
+                                app_state.show_input = false;
+                                app_state.input_buffer.clear();
+                            }
+                            KeyCode::Char(c) => {
+                                app_state.input_buffer.push(c);
+                            }
+                            KeyCode::Backspace => {
+                                app_state.input_buffer.pop();
+                            }
+                            _ => {}
+                        }
+                    } else {
+                        // --- NORMAL MODE ---
+                        match key.code {
+                            KeyCode::Char('q') => {
+                                let _ = action_tx.send(Action::Quit).await;
+                                break;
+                            }
+                            KeyCode::Char('a') => {
+                                app_state.show_input = true;
+                                app_state.message = "Example: Buy Milk @tomorrow !1".to_string();
+                            }
+                            // Navigation
+                            KeyCode::Down | KeyCode::Char('j') => app_state.next(),
+                            KeyCode::Up | KeyCode::Char('k') => app_state.previous(),
+
+                            // NEW: Page Up / Down
+                            KeyCode::PageDown => app_state.jump_forward(10), // Jump 10 items
+                            KeyCode::PageUp => app_state.jump_backward(10),
+
+                            // Actions
+                            KeyCode::Char(' ') => {
+                                if let Some(idx) = app_state.list_state.selected() {
+                                    if idx < app_state.tasks.len() {
+                                        app_state.tasks[idx].completed =
+                                            !app_state.tasks[idx].completed;
+                                        let _ = action_tx.send(Action::ToggleTask(idx)).await;
+                                    }
+                                }
+                            }
+                            KeyCode::Char('d') => {
+                                if let Some(idx) = app_state.list_state.selected() {
+                                    if idx < app_state.tasks.len() {
+                                        let _ = action_tx.send(Action::DeleteTask(idx)).await;
+                                    }
+                                }
+                            }
+                            KeyCode::Char('+') => {
+                                if let Some(idx) = app_state.list_state.selected() {
+                                    if idx < app_state.tasks.len() {
+                                        let _ =
+                                            action_tx.send(Action::ChangePriority(idx, 1)).await;
+                                    }
+                                }
+                            }
+                            KeyCode::Char('-') => {
+                                if let Some(idx) = app_state.list_state.selected() {
+                                    if idx < app_state.tasks.len() {
+                                        let _ =
+                                            action_tx.send(Action::ChangePriority(idx, -1)).await;
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                _ => {} // Handle Resize events etc if needed
             }
         }
     }
