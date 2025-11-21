@@ -1,6 +1,7 @@
 use chrono::{DateTime, Local, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use icalendar::{Calendar, CalendarComponent, Component, Todo, TodoStatus};
 use std::cmp::Ordering;
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -13,19 +14,18 @@ pub struct Task {
     pub parent_uid: Option<String>,
     pub etag: String,
     pub href: String,
+    // NEW: Visual Depth (0 = Root, 1 = Child, etc.)
+    // This is calculated locally, not saved to ICS
+    pub depth: usize,
 }
 
 impl Task {
-    // --- SMART LOGIC ---
     pub fn apply_smart_input(&mut self, input: &str) {
         let mut summary_words = Vec::new();
-
-        // Reset fields we are about to parse
         self.priority = 0;
         self.due = None;
 
         for word in input.split_whitespace() {
-            // 1. Check Priority (!1 - !9)
             if word.starts_with('!') {
                 if let Ok(p) = word[1..].parse::<u8>() {
                     if p >= 1 && p <= 9 {
@@ -34,15 +34,12 @@ impl Task {
                     }
                 }
             }
-
-            // 2. Check Date (@YYYY-MM-DD or @today/tomorrow)
             if word.starts_with('@') {
                 let date_str = &word[1..];
                 if let Ok(date) = NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
                     self.due = Some(date.and_hms_opt(23, 59, 59).unwrap().and_utc());
                     continue;
                 }
-
                 let now = Local::now().date_naive();
                 if date_str == "today" {
                     self.due = Some(now.and_hms_opt(23, 59, 59).unwrap().and_utc());
@@ -59,7 +56,6 @@ impl Task {
         self.summary = summary_words.join(" ");
     }
 
-    // Convert task back to string for editing (e.g., "Buy Milk !1 @2023-01-01")
     pub fn to_smart_string(&self) -> String {
         let mut s = self.summary.clone();
         if self.priority > 0 {
@@ -81,9 +77,69 @@ impl Task {
             parent_uid: None,
             etag: String::new(),
             href: String::new(),
+            depth: 0,
         };
         task.apply_smart_input(input);
         task
+    }
+
+    pub fn organize_hierarchy(mut tasks: Vec<Task>) -> Vec<Task> {
+        // 1. Index all UIDs so we know who exists
+        let present_uids: HashSet<String> = tasks.iter().map(|t| t.uid.clone()).collect();
+
+        let mut children_map: HashMap<String, Vec<Task>> = HashMap::new();
+        let mut roots: Vec<Task> = Vec::new();
+
+        // Sort first by Priority/Date
+        tasks.sort();
+
+        for mut task in tasks {
+            // Check if the parent actually exists in this list
+            let is_orphan = match &task.parent_uid {
+                Some(p_uid) => !present_uids.contains(p_uid), // Parent missing? -> It's a Root now
+                None => true,                                 // No parent? -> It's a Root
+            };
+
+            if is_orphan {
+                // If it was technically a child but parent is gone, clear the parent_uid
+                // so it behaves like a root permanently (optional, but cleaner for display)
+                if task.parent_uid.is_some() {
+                    // We don't clear it in the struct to avoid modifying data implicity,
+                    // but we treat it as a root for display.
+                    task.depth = 0;
+                }
+                roots.push(task);
+            } else {
+                // Valid child with existing parent
+                let p_uid = task.parent_uid.as_ref().unwrap().clone();
+                children_map.entry(p_uid).or_default().push(task);
+            }
+        }
+
+        // 2. Recursive Flattening
+        let mut result = Vec::new();
+        for root in roots {
+            Self::append_task_and_children(&root, &mut result, &children_map, 0);
+        }
+
+        result
+    }
+
+    fn append_task_and_children(
+        task: &Task,
+        result: &mut Vec<Task>,
+        map: &HashMap<String, Vec<Task>>,
+        depth: usize,
+    ) {
+        let mut t = task.clone();
+        t.depth = depth;
+        result.push(t);
+
+        if let Some(children) = map.get(&task.uid) {
+            for child in children {
+                Self::append_task_and_children(child, result, map, depth + 1);
+            }
+        }
     }
 
     // --- ICAL LOGIC ---
@@ -106,6 +162,12 @@ impl Task {
 
         if self.priority > 0 {
             todo.priority(self.priority.into());
+        }
+
+        // SAVE PARENT
+        if let Some(p_uid) = &self.parent_uid {
+            // RFC 5545: RELATED-TO;RELTYPE=PARENT:uuid
+            todo.add_property("RELATED-TO", p_uid.as_str());
         }
 
         let mut calendar = Calendar::new();
@@ -133,10 +195,7 @@ impl Task {
         let completed = todo
             .properties()
             .get("STATUS")
-            .map(|p| {
-                let val = p.value().trim().to_uppercase();
-                val == "COMPLETED"
-            })
+            .map(|p| p.value().trim().to_uppercase() == "COMPLETED")
             .unwrap_or(false);
 
         let priority = todo
@@ -162,20 +221,27 @@ impl Task {
             }
         });
 
+        // LOAD PARENT (Simple string extraction)
+        let parent_uid = todo
+            .properties()
+            .get("RELATED-TO")
+            .map(|p| p.value().to_string());
+
         Ok(Task {
             uid,
             summary,
             completed,
             due,
             priority,
-            parent_uid: None,
+            parent_uid, // Saved
             etag,
             href,
+            depth: 0, // Calculated later
         })
     }
 }
 
-// --- SORTING ---
+// --- SORTING (Unchanged) ---
 impl Ord for Task {
     fn cmp(&self, other: &Self) -> Ordering {
         if self.completed != other.completed {
