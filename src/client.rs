@@ -17,6 +17,7 @@ type HttpsClient = AddAuthorization<
     >,
 >;
 
+#[derive(Clone, Debug)] // <--- Added Debug
 pub struct RustyClient {
     client: CalDavClient<HttpsClient>,
     calendar_url: Option<String>,
