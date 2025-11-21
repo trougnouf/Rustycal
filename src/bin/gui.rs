@@ -5,7 +5,7 @@ use rustache::model::{CalendarListEntry, Task as TodoTask};
 use iced::widget::{
     Rule, button, checkbox, column, container, horizontal_space, row, scrollable, text, text_input,
 };
-use iced::{Background, Color, Element, Length, Task, Theme};
+use iced::{Background, Color, Element, Length, Padding, Task, Theme}; // <--- Added Padding
 use std::sync::OnceLock;
 use tokio::runtime::Runtime;
 
@@ -28,7 +28,7 @@ struct RustacheGui {
     active_cal_href: Option<String>,
 
     input_value: String,
-    search_value: String, // <--- NEW: Search State
+    search_value: String,
 
     client: Option<RustyClient>,
     loading: bool,
@@ -42,7 +42,7 @@ impl Default for RustacheGui {
             calendars: vec![],
             active_cal_href: None,
             input_value: String::new(),
-            search_value: String::new(), // <--- Init
+            search_value: String::new(),
             client: None,
             loading: true,
             error_msg: None,
@@ -53,9 +53,9 @@ impl Default for RustacheGui {
 #[derive(Debug, Clone)]
 enum Message {
     InputChanged(String),
-    SearchChanged(String), // <--- NEW: Message
+    SearchChanged(String),
     CreateTask,
-    ToggleTask(usize, bool), // Index represents index in the FULL list
+    ToggleTask(usize, bool),
     SelectCalendar(String),
 
     Loaded(
@@ -83,13 +83,11 @@ impl RustacheGui {
 
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            // --- SEARCH ---
             Message::SearchChanged(val) => {
                 self.search_value = val;
                 Task::none()
             }
 
-            // --- ASYNC HANDLERS ---
             Message::Loaded(Ok((client, cals, tasks, active))) => {
                 self.client = Some(client);
                 self.calendars = cals;
@@ -107,7 +105,6 @@ impl RustacheGui {
             Message::SyncSaved(Ok(updated_task)) => {
                 if let Some(index) = self.tasks.iter().position(|t| t.uid == updated_task.uid) {
                     self.tasks[index] = updated_task;
-                    // Re-sort hierarchy
                     let raw = self.tasks.clone();
                     self.tasks = TodoTask::organize_hierarchy(raw);
                 }
@@ -151,7 +148,6 @@ impl RustacheGui {
                 if !self.input_value.is_empty() {
                     let new_task = TodoTask::new(&self.input_value);
                     self.tasks.push(new_task.clone());
-                    // Re-sort
                     let raw = self.tasks.clone();
                     self.tasks = TodoTask::organize_hierarchy(raw);
 
@@ -168,11 +164,6 @@ impl RustacheGui {
             }
 
             Message::ToggleTask(index, is_checked) => {
-                // index here comes from the FILTERED view loop.
-                // We need to find the REAL task in the main list.
-                // But wait! The logic below maps UI tasks directly.
-                // We must ensure the `index` passed here is the index in `self.tasks`.
-
                 if let Some(task) = self.tasks.get_mut(index) {
                     task.completed = is_checked;
                     if let Some(client) = &self.client {
@@ -188,7 +179,6 @@ impl RustacheGui {
     }
 
     fn view(&self) -> Element<'_, Message> {
-        // 1. SIDEBAR
         let sidebar_content = column(
             self.calendars
                 .iter()
@@ -220,29 +210,24 @@ impl RustacheGui {
                     .background(Background::Color(palette.background.weak.color))
             });
 
-        // 2. MAIN CONTENT
         let title_text = if self.loading {
             "Loading..."
         } else {
             "Rustache"
         };
 
-        // Search Bar
         let search_input = text_input("Search...", &self.search_value)
             .on_input(Message::SearchChanged)
             .padding(5)
             .size(16);
 
-        let input = text_input("Add a task (Buy Milk !1)...", &self.input_value)
+        let input = text_input("Add a task (Buy Milk !1 @tomorrow)...", &self.input_value)
             .on_input(Message::InputChanged)
             .on_submit(Message::CreateTask)
             .padding(10)
             .size(20);
 
-        // --- FILTERING LOGIC ---
         let is_searching = !self.search_value.is_empty();
-
-        // We need to preserve the ORIGINAL INDEX so that Toggling works correctly
         let filtered_tasks: Vec<(usize, &TodoTask)> = self
             .tasks
             .iter()
@@ -268,20 +253,41 @@ impl RustacheGui {
                         _ => Color::WHITE,
                     };
 
-                    // Hide indentation if searching (flat list view)
                     let indent_size = if is_searching { 0 } else { task.depth * 20 };
                     let indent = horizontal_space().width(Length::Fixed(indent_size as f32));
+
+                    let summary = text(&task.summary)
+                        .size(20)
+                        .color(color)
+                        .width(Length::Fill); // Takes remaining space
+
+                    let date_content: Element<_> = match task.due {
+                        Some(d) => text(d.format("%Y-%m-%d").to_string())
+                            .size(14)
+                            .color(Color::from_rgb(0.5, 0.5, 0.5))
+                            .into(),
+                        None => horizontal_space().width(0).into(),
+                    };
 
                     let row_content = row![
                         indent,
                         checkbox("", task.completed)
                             .on_toggle(move |b| Message::ToggleTask(real_index, b)),
-                        text(&task.summary).size(20).color(color)
+                        summary,
+                        date_content
                     ]
                     .spacing(10)
                     .align_y(iced::Alignment::Center);
 
-                    container(row_content).padding(5).into()
+                    container(row_content)
+                        // --- FIX: Explicit Padding Struct ---
+                        .padding(Padding {
+                            top: 5.0,
+                            right: 20.0, // Extra right padding for scrollbar
+                            bottom: 5.0,
+                            left: 5.0,
+                        })
+                        .into()
                 })
                 .collect::<Vec<_>>(),
         )
@@ -339,7 +345,7 @@ async fn connect_and_fetch_wrapper() -> Result<
 async fn async_fetch_wrapper(client: RustyClient) -> Result<Vec<TodoTask>, String> {
     let rt = TOKIO_RUNTIME.get().expect("Runtime not initialized");
     rt.spawn(async move {
-        let mut tasks = client.get_tasks().await.map_err(|e| e.to_string())?;
+        let tasks = client.get_tasks().await.map_err(|e| e.to_string())?;
         Ok(tasks)
     })
     .await
