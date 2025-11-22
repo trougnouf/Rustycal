@@ -19,28 +19,52 @@ pub fn main() -> iced::Result {
         .set(runtime)
         .expect("Failed to set global runtime");
 
-    iced::application("Fairouille", FairouilleGui::update, FairouilleGui::view)
-        .theme(FairouilleGui::theme)
-        .run_with(FairouilleGui::new)
+    iced::application("Fairouille", RustacheGui::update, RustacheGui::view)
+        .theme(RustacheGui::theme)
+        .run_with(RustacheGui::new)
 }
 
-struct FairouilleGui {
+// Application State Machine
+enum AppState {
+    Loading,    // Initial Startup / Connecting
+    Onboarding, // Login Screen
+    Active,     // Main App
+}
+
+struct RustacheGui {
+    state: AppState,
+
+    // Onboarding Data
+    ob_url: String,
+    ob_user: String,
+    ob_pass: String,
+
+    // Active Data
     tasks: Vec<TodoTask>,
     calendars: Vec<CalendarListEntry>,
     active_cal_href: Option<String>,
+
     input_value: String,
     description_value: String,
     search_value: String,
     editing_uid: Option<String>,
     expanded_tasks: HashSet<String>,
     client: Option<RustyClient>,
+
+    // Background Loading Indicator (for syncs/switches while Active)
     loading: bool,
+
     error_msg: Option<String>,
 }
 
-impl Default for FairouilleGui {
+impl Default for RustacheGui {
     fn default() -> Self {
         Self {
+            state: AppState::Loading,
+            ob_url: String::new(),
+            ob_user: String::new(),
+            ob_pass: String::new(),
+
             tasks: vec![],
             calendars: vec![],
             active_cal_href: None,
@@ -50,7 +74,7 @@ impl Default for FairouilleGui {
             editing_uid: None,
             expanded_tasks: HashSet::new(),
             client: None,
-            loading: true,
+            loading: true, // Default to true until loaded
             error_msg: None,
         }
     }
@@ -58,6 +82,13 @@ impl Default for FairouilleGui {
 
 #[derive(Debug, Clone)]
 enum Message {
+    // Onboarding
+    ObUrlChanged(String),
+    ObUserChanged(String),
+    ObPassChanged(String),
+    ObSubmit,
+
+    // Main App
     InputChanged(String),
     DescriptionChanged(String),
     SearchChanged(String),
@@ -72,6 +103,8 @@ enum Message {
     OutdentTask(usize),
     ToggleDetails(String),
 
+    // Async Results
+    ConfigLoaded(Result<Config, String>),
     Loaded(
         Result<
             (
@@ -87,25 +120,64 @@ enum Message {
     SyncToggleComplete(Result<(TodoTask, Option<TodoTask>), String>),
     TasksRefreshed(Result<Vec<TodoTask>, String>),
     DeleteComplete(#[allow(dead_code)] Result<(), String>),
+
+    // Cache
+    CacheLoaded(Vec<TodoTask>),
 }
 
-impl FairouilleGui {
+impl RustacheGui {
     fn new() -> (Self, Task<Message>) {
         (
             Self::default(),
-            // Start Network Sync directly
-            Task::perform(connect_and_fetch_wrapper(), Message::Loaded),
+            // Try loading config first
+            Task::perform(
+                async { Config::load().map_err(|e| e.to_string()) },
+                Message::ConfigLoaded,
+            ),
         )
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
-            Message::ToggleDetails(uid) => {
-                if self.expanded_tasks.contains(&uid) {
-                    self.expanded_tasks.remove(&uid);
-                } else {
-                    self.expanded_tasks.insert(uid);
-                }
+            // --- STARTUP LOGIC ---
+            Message::ConfigLoaded(Ok(config)) => {
+                self.state = AppState::Loading;
+                Task::perform(connect_and_fetch_wrapper(config), Message::Loaded)
+            }
+            Message::ConfigLoaded(Err(_)) => {
+                self.state = AppState::Onboarding;
+                Task::none()
+            }
+
+            // --- ONBOARDING FORM ---
+            Message::ObUrlChanged(v) => {
+                self.ob_url = v;
+                Task::none()
+            }
+            Message::ObUserChanged(v) => {
+                self.ob_user = v;
+                Task::none()
+            }
+            Message::ObPassChanged(v) => {
+                self.ob_pass = v;
+                Task::none()
+            }
+            Message::ObSubmit => {
+                let config = Config {
+                    url: self.ob_url.clone(),
+                    username: self.ob_user.clone(),
+                    password: self.ob_pass.clone(),
+                    default_calendar: None,
+                };
+                self.state = AppState::Loading;
+                self.error_msg = Some("Connecting...".to_string());
+                Task::perform(connect_and_fetch_wrapper(config), Message::Loaded)
+            }
+
+            // --- MAIN APP LOGIC ---
+            Message::CacheLoaded(tasks) => {
+                // If we are already Active, this is a calendar switch cache load
+                self.tasks = TodoTask::organize_hierarchy(tasks);
                 Task::none()
             }
 
@@ -115,17 +187,39 @@ impl FairouilleGui {
                 self.tasks = TodoTask::organize_hierarchy(tasks.clone());
                 self.active_cal_href = active.clone();
 
-                // SAVE INITIAL CACHE
                 if let Some(href) = &active {
                     let _ = Cache::save(href, &tasks);
                 }
 
+                if !self.ob_url.is_empty() {
+                    let _ = Config {
+                        url: self.ob_url.clone(),
+                        username: self.ob_user.clone(),
+                        password: self.ob_pass.clone(),
+                        default_calendar: None,
+                    }
+                    .save();
+                }
+
+                self.state = AppState::Active;
+                self.error_msg = None;
+                self.loading = false; // Done loading
+                Task::none()
+            }
+
+            Message::Loaded(Err(e)) => {
+                self.error_msg = Some(format!("Connection Failed: {}", e));
+                self.state = AppState::Onboarding;
                 self.loading = false;
                 Task::none()
             }
-            Message::Loaded(Err(e)) => {
-                self.error_msg = Some(format!("Connection Failed: {}", e));
-                self.loading = false;
+
+            Message::ToggleDetails(uid) => {
+                if self.expanded_tasks.contains(&uid) {
+                    self.expanded_tasks.remove(&uid);
+                } else {
+                    self.expanded_tasks.insert(uid);
+                }
                 Task::none()
             }
 
@@ -134,7 +228,6 @@ impl FairouilleGui {
                     self.tasks[index] = updated_task;
                     let raw = self.tasks.clone();
                     self.tasks = TodoTask::organize_hierarchy(raw);
-                    // SAVE CACHE
                     if let Some(href) = &self.active_cal_href {
                         let _ = Cache::save(href, &self.tasks);
                     }
@@ -155,7 +248,6 @@ impl FairouilleGui {
                 }
                 let raw = self.tasks.clone();
                 self.tasks = TodoTask::organize_hierarchy(raw);
-                // SAVE CACHE
                 if let Some(href) = &self.active_cal_href {
                     let _ = Cache::save(href, &self.tasks);
                 }
@@ -168,7 +260,6 @@ impl FairouilleGui {
 
             Message::TasksRefreshed(Ok(tasks)) => {
                 self.tasks = TodoTask::organize_hierarchy(tasks.clone());
-                // SAVE CACHE
                 if let Some(href) = &self.active_cal_href {
                     let _ = Cache::save(href, &tasks);
                 }
@@ -176,7 +267,7 @@ impl FairouilleGui {
                 Task::none()
             }
             Message::TasksRefreshed(Err(e)) => {
-                self.error_msg = Some(format!("Fetch Error: {}", e));
+                self.error_msg = Some(format!("Fetch: {}", e));
                 self.loading = false;
                 Task::none()
             }
@@ -185,13 +276,12 @@ impl FairouilleGui {
                 if let Some(client) = &mut self.client {
                     self.active_cal_href = Some(href.clone());
 
-                    // --- INSTANT CACHE LOAD ---
+                    // Instant Cache Load
                     if let Ok(cached) = Cache::load(&href) {
                         self.tasks = TodoTask::organize_hierarchy(cached);
                     } else {
                         self.tasks.clear();
                     }
-                    // --------------------------
 
                     self.loading = true;
                     client.set_calendar(&href);
@@ -286,11 +376,9 @@ impl FairouilleGui {
                     self.tasks.remove(index);
                     let raw = self.tasks.clone();
                     self.tasks = TodoTask::organize_hierarchy(raw);
-                    // SAVE CACHE
                     if let Some(href) = &self.active_cal_href {
                         let _ = Cache::save(href, &self.tasks);
                     }
-
                     if let Some(client) = &self.client {
                         return Task::perform(
                             async_delete_wrapper(client.clone(), task),
@@ -374,255 +462,312 @@ impl FairouilleGui {
     }
 
     fn view(&self) -> Element<'_, Message> {
-        let sidebar_content = column(
-            self.calendars
-                .iter()
-                .map(|cal| {
-                    let is_active = self.active_cal_href.as_ref() == Some(&cal.href);
-                    let btn = button(text(&cal.name).size(16))
-                        .padding(10)
-                        .width(Length::Fill)
-                        .on_press(Message::SelectCalendar(cal.href.clone()));
-                    if is_active {
-                        btn.style(button::primary)
-                    } else {
-                        btn.style(button::secondary)
-                    }
-                    .into()
-                })
-                .collect::<Vec<_>>(),
-        )
-        .spacing(10)
-        .padding(10);
-
-        let sidebar = container(scrollable(sidebar_content))
-            .width(200)
-            .height(Length::Fill)
-            .style(|theme: &Theme| {
-                let palette = theme.extended_palette();
-                container::Style::default()
-                    .background(Background::Color(palette.background.weak.color))
-            });
-
-        let title_text = if self.loading {
-            "Loading..."
-        } else {
-            "Fairouille"
-        };
-        let search_input = text_input("Search...", &self.search_value)
-            .on_input(Message::SearchChanged)
-            .padding(5)
-            .size(16);
-
-        let input_placeholder = if self.editing_uid.is_some() {
-            "Edit Title..."
-        } else {
-            "Add task (Buy Milk !1 @daily)..."
-        };
-        let input_title = text_input(input_placeholder, &self.input_value)
-            .on_input(Message::InputChanged)
-            .on_submit(Message::SubmitTask)
-            .padding(10)
-            .size(20);
-
-        let footer_content: Element<_> = if self.editing_uid.is_some() {
-            let input_desc = text_input("Notes...", &self.description_value)
-                .on_input(Message::DescriptionChanged)
-                .on_submit(Message::SubmitTask)
-                .padding(10)
-                .size(16);
-            let cancel_btn = button(text("Cancel").size(16))
-                .style(button::secondary)
-                .on_press(Message::CancelEdit);
-            let save_btn = button(text("Save").size(16))
-                .style(button::primary)
-                .on_press(Message::SubmitTask);
-            column![
-                row![
-                    text("Editing")
-                        .size(14)
-                        .color(Color::from_rgb(0.7, 0.7, 1.0)),
-                    horizontal_space(),
-                    cancel_btn,
-                    save_btn
-                ]
-                .spacing(10),
-                input_title,
-                input_desc
-            ]
-            .spacing(5)
-            .into()
-        } else {
-            column![input_title].into()
-        };
-
-        let is_searching = !self.search_value.is_empty();
-        let filtered_tasks: Vec<(usize, &TodoTask)> = self
-            .tasks
-            .iter()
-            .enumerate()
-            .filter(|(_, t)| {
-                if is_searching {
-                    t.summary
-                        .to_lowercase()
-                        .contains(&self.search_value.to_lowercase())
-                } else {
-                    true
-                }
-            })
-            .collect();
-
-        let tasks_view: Element<_> = column(
-            filtered_tasks
-                .into_iter()
-                .map(|(real_index, task)| {
-                    let color = match task.priority {
-                        1..=4 => Color::from_rgb(0.8, 0.2, 0.2),
-                        5 => Color::from_rgb(0.8, 0.8, 0.2),
-                        _ => Color::WHITE,
-                    };
-                    let indent_size = if is_searching { 0 } else { task.depth * 20 };
-                    let indent = horizontal_space().width(Length::Fixed(indent_size as f32));
-                    let summary = text(&task.summary)
-                        .size(20)
-                        .color(color)
-                        .width(Length::Fill);
-
-                    let recur_indicator: Element<_> = if task.rrule.is_some() {
-                        text("(R)")
-                            .size(14)
-                            .color(Color::from_rgb(0.6, 0.6, 1.0))
-                            .into()
-                    } else {
-                        horizontal_space().width(0).into()
-                    };
-
-                    let date_content: Element<_> = match task.due {
-                        Some(d) => text(d.format("%Y-%m-%d").to_string())
-                            .size(14)
-                            .color(Color::from_rgb(0.5, 0.5, 0.5))
-                            .into(),
-                        None => horizontal_space().width(0).into(),
-                    };
-
-                    let btn_style = button::secondary;
-                    let has_desc = !task.description.is_empty();
-                    let is_expanded = self.expanded_tasks.contains(&task.uid);
-
-                    let info_btn = if has_desc {
-                        // Removed .horizontal_alignment()
-                        button(text("i").size(12))
-                            .style(if is_expanded {
-                                button::primary
-                            } else {
-                                button::secondary
-                            })
-                            .padding(5)
-                            .width(Length::Fixed(25.0))
-                            .on_press(Message::ToggleDetails(task.uid.clone()))
-                    } else {
-                        button(text("").size(12))
-                            .style(button::text)
-                            .padding(5)
-                            .width(Length::Fixed(25.0))
-                    };
-
-                    let actions = row![
-                        info_btn,
-                        button(text("+").size(14))
-                            .style(btn_style)
-                            .padding(5)
-                            .on_press(Message::ChangePriority(real_index, 1)),
-                        button(text("-").size(14))
-                            .style(btn_style)
-                            .padding(5)
-                            .on_press(Message::ChangePriority(real_index, -1)),
-                        button(text(">").size(14))
-                            .style(btn_style)
-                            .padding(5)
-                            .on_press(Message::IndentTask(real_index)),
-                        button(text("<").size(14))
-                            .style(btn_style)
-                            .padding(5)
-                            .on_press(Message::OutdentTask(real_index)),
-                        button(text("Edit").size(14))
-                            .style(btn_style)
-                            .padding(5)
-                            .on_press(Message::EditTaskStart(real_index)),
-                        button(text("Del").size(14))
-                            .style(button::danger)
-                            .padding(5)
-                            .on_press(Message::DeleteTask(real_index)),
-                    ]
-                    .spacing(5);
-
-                    let row_main = row![
-                        indent,
-                        checkbox("", task.completed)
-                            .on_toggle(move |b| Message::ToggleTask(real_index, b)),
-                        summary,
-                        container(date_content)
-                            .width(Length::Fixed(90.0))
-                            .align_x(iced::alignment::Horizontal::Right),
-                        container(recur_indicator)
-                            .width(Length::Fixed(30.0))
-                            .align_x(iced::alignment::Horizontal::Center),
-                        actions
-                    ]
-                    .spacing(15)
-                    .align_y(iced::Alignment::Center);
-
-                    let content: Element<_> = if is_expanded {
-                        let desc_text = text(&task.description)
-                            .size(14)
-                            .color(Color::from_rgb(0.7, 0.7, 0.7));
-                        let desc_row = row![
-                            horizontal_space().width(Length::Fixed(indent_size as f32 + 30.0)),
-                            desc_text
-                        ];
-                        column![row_main, desc_row].spacing(5).into()
-                    } else {
-                        row_main.into()
-                    };
-
-                    container(content)
-                        .padding(Padding {
-                            top: 5.0,
-                            right: 30.0,
-                            bottom: 5.0,
-                            left: 5.0,
-                        })
-                        .into()
-                })
-                .collect::<Vec<_>>(),
-        )
-        .spacing(2)
-        .into();
-
-        let main_content = column![
-            row![
-                text(title_text).size(40),
-                horizontal_space(),
-                search_input.width(200)
-            ]
-            .align_y(iced::Alignment::Center),
-            footer_content,
-            scrollable(tasks_view)
-        ]
-        .spacing(20)
-        .padding(20)
-        .max_width(800);
-        let layout = row![
-            sidebar,
-            Rule::vertical(1),
-            container(main_content)
+        match self.state {
+            AppState::Loading => container(text("Loading...").size(30))
                 .width(Length::Fill)
+                .height(Length::Fill)
                 .center_x(Length::Fill)
-        ];
-        container(layout)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
+                .center_y(Length::Fill)
+                .into(),
+
+            AppState::Onboarding => {
+                let title = text("Welcome to Fairouille").size(40);
+                let error = if let Some(e) = &self.error_msg {
+                    text(e).color(Color::from_rgb(1.0, 0.0, 0.0))
+                } else {
+                    text("")
+                };
+
+                let form = column![
+                    text("CalDAV Server URL:"),
+                    text_input("https://example.com/dav/...", &self.ob_url)
+                        .on_input(Message::ObUrlChanged)
+                        .padding(10),
+                    text("Username:"),
+                    text_input("User", &self.ob_user)
+                        .on_input(Message::ObUserChanged)
+                        .padding(10),
+                    text("Password:"),
+                    text_input("Password", &self.ob_pass)
+                        .on_input(Message::ObPassChanged)
+                        .secure(true)
+                        .padding(10),
+                    button("Connect").padding(10).on_press(Message::ObSubmit)
+                ]
+                .spacing(15)
+                .max_width(400);
+
+                let config_path = Config::get_path_string().unwrap_or_default();
+                let footer: Element<'_, Message> =
+                    text(format!("Config will be saved to: {}", config_path))
+                        .size(10)
+                        .color(Color::from_rgb(0.5, 0.5, 0.5))
+                        .into();
+
+                container(
+                    column![title, error, form, footer]
+                        .spacing(20)
+                        .align_x(iced::Alignment::Center),
+                )
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .center_x(Length::Fill)
+                .center_y(Length::Fill)
+                .into()
+            }
+
+            AppState::Active => {
+                let sidebar_content = column(
+                    self.calendars
+                        .iter()
+                        .map(|cal| {
+                            let is_active = self.active_cal_href.as_ref() == Some(&cal.href);
+                            let btn = button(text(&cal.name).size(16))
+                                .padding(10)
+                                .width(Length::Fill)
+                                .on_press(Message::SelectCalendar(cal.href.clone()));
+                            if is_active {
+                                btn.style(button::primary)
+                            } else {
+                                btn.style(button::secondary)
+                            }
+                            .into()
+                        })
+                        .collect::<Vec<_>>(),
+                )
+                .spacing(10)
+                .padding(10);
+
+                let sidebar = container(scrollable(sidebar_content))
+                    .width(200)
+                    .height(Length::Fill)
+                    .style(|theme: &Theme| {
+                        let palette = theme.extended_palette();
+                        container::Style::default()
+                            .background(Background::Color(palette.background.weak.color))
+                    });
+
+                let title_text = if self.loading {
+                    "Loading..."
+                } else {
+                    "Fairouille"
+                };
+                let search_input = text_input("Search...", &self.search_value)
+                    .on_input(Message::SearchChanged)
+                    .padding(5)
+                    .size(16);
+
+                let input_placeholder = if self.editing_uid.is_some() {
+                    "Edit Title..."
+                } else {
+                    "Add task (Buy cat food !1 @daily)..."
+                };
+                let input_title = text_input(input_placeholder, &self.input_value)
+                    .on_input(Message::InputChanged)
+                    .on_submit(Message::SubmitTask)
+                    .padding(10)
+                    .size(20);
+
+                let footer_content: Element<_> = if self.editing_uid.is_some() {
+                    let input_desc = text_input("Notes...", &self.description_value)
+                        .on_input(Message::DescriptionChanged)
+                        .on_submit(Message::SubmitTask)
+                        .padding(10)
+                        .size(16);
+                    let cancel_btn = button(text("Cancel").size(16))
+                        .style(button::secondary)
+                        .on_press(Message::CancelEdit);
+                    let save_btn = button(text("Save").size(16))
+                        .style(button::primary)
+                        .on_press(Message::SubmitTask);
+                    column![
+                        row![
+                            text("Editing")
+                                .size(14)
+                                .color(Color::from_rgb(0.7, 0.7, 1.0)),
+                            horizontal_space(),
+                            cancel_btn,
+                            save_btn
+                        ]
+                        .spacing(10),
+                        input_title,
+                        input_desc
+                    ]
+                    .spacing(5)
+                    .into()
+                } else {
+                    column![input_title].into()
+                };
+
+                let is_searching = !self.search_value.is_empty();
+                let filtered_tasks: Vec<(usize, &TodoTask)> = self
+                    .tasks
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, t)| {
+                        if is_searching {
+                            t.summary
+                                .to_lowercase()
+                                .contains(&self.search_value.to_lowercase())
+                        } else {
+                            true
+                        }
+                    })
+                    .collect();
+
+                let tasks_view: Element<_> = column(
+                    filtered_tasks
+                        .into_iter()
+                        .map(|(real_index, task)| {
+                            let color = match task.priority {
+                                1..=4 => Color::from_rgb(0.8, 0.2, 0.2),
+                                5 => Color::from_rgb(0.8, 0.8, 0.2),
+                                _ => Color::WHITE,
+                            };
+                            let indent_size = if is_searching { 0 } else { task.depth * 20 };
+                            let indent =
+                                horizontal_space().width(Length::Fixed(indent_size as f32));
+                            let summary = text(&task.summary)
+                                .size(20)
+                                .color(color)
+                                .width(Length::Fill);
+
+                            let recur_indicator: Element<_> = if task.rrule.is_some() {
+                                text("(R)")
+                                    .size(14)
+                                    .color(Color::from_rgb(0.6, 0.6, 1.0))
+                                    .into()
+                            } else {
+                                horizontal_space().width(0).into()
+                            };
+
+                            let date_content: Element<_> = match task.due {
+                                Some(d) => text(d.format("%Y-%m-%d").to_string())
+                                    .size(14)
+                                    .color(Color::from_rgb(0.5, 0.5, 0.5))
+                                    .into(),
+                                None => horizontal_space().width(0).into(),
+                            };
+
+                            let btn_style = button::secondary;
+                            let has_desc = !task.description.is_empty();
+                            let is_expanded = self.expanded_tasks.contains(&task.uid);
+                            let info_btn = if has_desc {
+                                button(text("i").size(12))
+                                    .style(if is_expanded {
+                                        button::primary
+                                    } else {
+                                        button::secondary
+                                    })
+                                    .padding(5)
+                                    .width(Length::Fixed(25.0))
+                                    .on_press(Message::ToggleDetails(task.uid.clone()))
+                            } else {
+                                button(text("").size(12))
+                                    .style(button::text)
+                                    .padding(5)
+                                    .width(Length::Fixed(25.0))
+                            };
+
+                            let actions = row![
+                                info_btn,
+                                button(text("+").size(14))
+                                    .style(btn_style)
+                                    .padding(5)
+                                    .on_press(Message::ChangePriority(real_index, 1)),
+                                button(text("-").size(14))
+                                    .style(btn_style)
+                                    .padding(5)
+                                    .on_press(Message::ChangePriority(real_index, -1)),
+                                button(text(">").size(14))
+                                    .style(btn_style)
+                                    .padding(5)
+                                    .on_press(Message::IndentTask(real_index)),
+                                button(text("<").size(14))
+                                    .style(btn_style)
+                                    .padding(5)
+                                    .on_press(Message::OutdentTask(real_index)),
+                                button(text("Edit").size(14))
+                                    .style(btn_style)
+                                    .padding(5)
+                                    .on_press(Message::EditTaskStart(real_index)),
+                                button(text("Del").size(14))
+                                    .style(button::danger)
+                                    .padding(5)
+                                    .on_press(Message::DeleteTask(real_index)),
+                            ]
+                            .spacing(5);
+
+                            let row_main = row![
+                                indent,
+                                checkbox("", task.completed)
+                                    .on_toggle(move |b| Message::ToggleTask(real_index, b)),
+                                summary,
+                                container(date_content)
+                                    .width(Length::Fixed(90.0))
+                                    .align_x(iced::alignment::Horizontal::Right),
+                                container(recur_indicator)
+                                    .width(Length::Fixed(30.0))
+                                    .align_x(iced::alignment::Horizontal::Center),
+                                actions
+                            ]
+                            .spacing(15)
+                            .align_y(iced::Alignment::Center);
+
+                            let content: Element<_> = if is_expanded {
+                                let desc_text = text(&task.description)
+                                    .size(14)
+                                    .color(Color::from_rgb(0.7, 0.7, 0.7));
+                                let desc_row = row![
+                                    horizontal_space()
+                                        .width(Length::Fixed(indent_size as f32 + 30.0)),
+                                    desc_text
+                                ];
+                                column![row_main, desc_row].spacing(5).into()
+                            } else {
+                                row_main.into()
+                            };
+
+                            container(content)
+                                .padding(Padding {
+                                    top: 5.0,
+                                    right: 30.0,
+                                    bottom: 5.0,
+                                    left: 5.0,
+                                })
+                                .into()
+                        })
+                        .collect::<Vec<_>>(),
+                )
+                .spacing(2)
+                .into();
+
+                let main_content = column![
+                    row![
+                        text(title_text).size(40),
+                        horizontal_space(),
+                        search_input.width(200)
+                    ]
+                    .align_y(iced::Alignment::Center),
+                    footer_content,
+                    scrollable(tasks_view)
+                ]
+                .spacing(20)
+                .padding(20)
+                .max_width(800);
+                let layout = row![
+                    sidebar,
+                    Rule::vertical(1),
+                    container(main_content)
+                        .width(Length::Fill)
+                        .center_x(Length::Fill)
+                ];
+                container(layout)
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .into()
+            }
+        }
     }
 
     fn theme(&self) -> Theme {
@@ -630,8 +775,9 @@ impl FairouilleGui {
     }
 }
 
-// --- ASYNC WRAPPERS & LOGIC (Same as before) ---
-async fn connect_and_fetch_wrapper() -> Result<
+async fn connect_and_fetch_wrapper(
+    config: Config,
+) -> Result<
     (
         RustyClient,
         Vec<CalendarListEntry>,
@@ -641,7 +787,7 @@ async fn connect_and_fetch_wrapper() -> Result<
     String,
 > {
     let rt = TOKIO_RUNTIME.get().expect("Runtime not initialized");
-    rt.spawn(async { connect_and_fetch().await })
+    rt.spawn(async { connect_and_fetch(config).await })
         .await
         .map_err(|e| e.to_string())?
 }
@@ -682,7 +828,9 @@ async fn async_toggle_wrapper(
         .map_err(|e| e.to_string())?
 }
 
-async fn connect_and_fetch() -> Result<
+async fn connect_and_fetch(
+    config: Config,
+) -> Result<
     (
         RustyClient,
         Vec<CalendarListEntry>,
@@ -691,15 +839,14 @@ async fn connect_and_fetch() -> Result<
     ),
     String,
 > {
-    let config = Config::load().map_err(|e| e.to_string())?;
     let mut client = RustyClient::new(&config.url, &config.username, &config.password)
         .map_err(|e| e.to_string())?;
     let calendars = client.get_calendars().await.unwrap_or_default();
     let mut active_href = None;
-    if let Some(def_cal) = config.default_calendar {
+    if let Some(def_cal) = &config.default_calendar {
         if let Some(found) = calendars
             .iter()
-            .find(|c| c.name == def_cal || c.href == def_cal)
+            .find(|c| c.name == *def_cal || c.href == *def_cal)
         {
             client.set_calendar(&found.href);
             active_href = Some(found.href.clone());

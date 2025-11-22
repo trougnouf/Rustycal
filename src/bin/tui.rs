@@ -51,14 +51,73 @@ async fn main() -> Result<()> {
         default_hook(info);
     }));
 
-    let (url, user, pass, default_cal) = match config::Config::load() {
+    let config_result = config::Config::load();
+
+    let (url, user, pass, default_cal) = match config_result {
         Ok(cfg) => (cfg.url, cfg.username, cfg.password, cfg.default_calendar),
         Err(_) => {
-            let args: Vec<String> = env::args().collect();
-            if args.len() < 4 {
-                return Ok(());
+            // Config missing? Interactive Prompt!
+            println!("Welcome to Fairouille (TUI). Config not found.");
+            println!("Please setup your CalDAV connection.");
+
+            let mut input = String::new();
+
+            println!("Server URL (e.g. https://.../):");
+            std::io::stdin().read_line(&mut input)?;
+            let url = input.trim().to_string();
+            input.clear();
+
+            println!("Username:");
+            std::io::stdin().read_line(&mut input)?;
+            let user = input.trim().to_string();
+            input.clear();
+
+            println!("Password:");
+            std::io::stdin().read_line(&mut input)?;
+            let pass = input.trim().to_string();
+            input.clear();
+
+            // We create a temporary client just to check if creds work
+            // This is a blocking check before we enter TUI mode
+
+            println!("Testing connection...");
+
+            let check_result = async {
+                let mut client = RustyClient::new(&url, &user, &pass).map_err(|e| e.to_string())?;
+                // 1. Force a Principal lookup (Actually hits the server)
+                if let Err(e) = client.get_calendars().await {
+                    return Err(format!("Could not list calendars: {}", e));
+                }
+                Ok(())
             }
-            (args[1].clone(), args[2].clone(), args[3].clone(), None)
+            .await;
+
+            if let Err(e) = check_result {
+                eprintln!("\nERROR: Connection Failed!");
+                eprintln!("Reason: {}", e);
+                // Force exit
+                std::process::exit(1);
+            }
+
+            println!("Success! Saving configuration...");
+
+            let new_config = config::Config {
+                url: url.clone(),
+                username: user.clone(),
+                password: pass.clone(),
+                default_calendar: None,
+            };
+
+            // --- FIX: Show path ---
+            if let Ok(path) = config::Config::get_path_string() {
+                println!("Config saved to: {}", path);
+            }
+            new_config.save()?;
+
+            println!("Starting TUI...");
+            std::thread::sleep(std::time::Duration::from_secs(2)); // Give 2s to read path
+
+            (url, user, pass, None)
         }
     };
 
@@ -592,7 +651,7 @@ async fn main() -> Result<()> {
                         KeyCode::Char('a') => {
                             app_state.mode = InputMode::Creating;
                             app_state.reset_input();
-                            app_state.message = "Example: Buy Milk @tomorrow !1".to_string();
+                            app_state.message = "Example: Buy cat food @tomorrow !1".to_string();
                         }
                         KeyCode::Char('e') => {
                             if app_state.active_focus == Focus::Main {

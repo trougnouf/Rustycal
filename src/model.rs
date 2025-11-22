@@ -393,8 +393,8 @@ mod tests {
 
     #[test]
     fn test_smart_input_priority() {
-        let t = Task::new("Buy Milk !1");
-        assert_eq!(t.summary, "Buy Milk");
+        let t = Task::new("Buy cat food !1");
+        assert_eq!(t.summary, "Buy cat food");
         assert_eq!(t.priority, 1);
         let t2 = Task::new("Low priority !9");
         assert_eq!(t2.priority, 9);

@@ -1,9 +1,10 @@
 use anyhow::Result;
 use directories::ProjectDirs;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::fs;
+use std::path::PathBuf;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct Config {
     pub url: String,
     pub username: String,
@@ -12,18 +13,36 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn load() -> Result<Self> {
-        // Now looks in ~/.config/fairouille/config.toml
+    fn get_path() -> Result<PathBuf> {
         if let Some(proj_dirs) = ProjectDirs::from("com", "trougnouf", "fairouille") {
-            let config_path = proj_dirs.config_dir().join("config.toml");
-
-            if config_path.exists() {
-                let contents = fs::read_to_string(config_path)?;
-                let config: Config = toml::from_str(&contents)?;
-                return Ok(config);
+            let config_dir = proj_dirs.config_dir();
+            if !config_dir.exists() {
+                fs::create_dir_all(config_dir)?;
             }
+            return Ok(config_dir.join("config.toml"));
         }
+        Err(anyhow::anyhow!("Could not determine config path"))
+    }
 
+    pub fn load() -> Result<Self> {
+        let path = Self::get_path()?;
+        if path.exists() {
+            let contents = fs::read_to_string(path)?;
+            let config: Config = toml::from_str(&contents)?;
+            return Ok(config);
+        }
         Err(anyhow::anyhow!("Config file not found"))
+    }
+
+    // NEW: Save to disk
+    pub fn save(&self) -> Result<()> {
+        let path = Self::get_path()?;
+        let toml_str = toml::to_string_pretty(self)?;
+        fs::write(path, toml_str)?;
+        Ok(())
+    }
+    pub fn get_path_string() -> Result<String> {
+        let path = Self::get_path()?;
+        Ok(path.to_string_lossy().to_string())
     }
 }
