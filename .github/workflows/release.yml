@@ -17,27 +17,34 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      # 1. Install System Dependencies (Required for Iced GUI)
+      # 1. Install System Dependencies
       - name: Install Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y libfontconfig1-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev
 
-      # 2. Build both binaries (TUI and GUI)
+      # 2. Install Packaging Tools
+      - name: Install cargo-deb
+        run: cargo install cargo-deb
+
+      # 3. Build Release Binaries (Standard)
       - name: Build Release
         run: cargo build --release --features gui
 
-      # 3. Package Tarball
+      # 4. Build Debian Package (.deb)
+      # This uses the [package.metadata.deb] section in your Cargo.toml
+      - name: Build Deb
+        run: cargo deb --no-build --features gui 
+        # --no-build uses the binaries we just built in step 3 to save time
+
+      # 5. Package Generic Linux Tarball (for non-Debian distros)
       - name: Create Archive
         run: |
-          # Create a staging directory
           STAGING="cfait-${{ github.ref_name }}"
           mkdir -p "$STAGING"
 
-          # Copy Main Binary (TUI) -> matches [[bin]] name = "cfait"
+          # Copy Binaries (Renaming gui -> cfait-gui)
           cp target/release/cfait "$STAGING/"
-          
-          # Copy GUI Binary -> matches [[bin]] name = "gui", renamed for user
           cp target/release/gui "$STAGING/cfait-gui"
           
           # Assets
@@ -47,39 +54,32 @@ jobs:
           # Compress
           tar -czvf "cfait-linux-${{ github.ref_name }}.tar.gz" "$STAGING"
 
-      # 4. Publish to GitHub Releases
+      # 6. Publish to GitHub Releases
       - name: Upload Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
             cfait-linux-${{ github.ref_name }}.tar.gz
+            target/debian/*.deb
 
   package-arch:
-    needs: build-linux # Wait for the main build to verify code works
+    needs: build-linux
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
 
       - name: Generate Production PKGBUILD
         run: |
-          VERSION=${{ github.ref_name }} # e.g., v0.1.5
-          VERSION_NUM=${VERSION#v}       # e.g., 0.1.5
-          
-          # 1. Download the Source Tarball (Simulating what makepkg does)
-          # Note: Ensure this matches the source= line in your PKGBUILD exactly
+          VERSION=${{ github.ref_name }}
+          # Note: Assuming your gitlab tags match github tags
           SOURCE_URL="https://gitlab.com/trougnouf/cfait/-/archive/${VERSION}/cfait-${VERSION}.tar.gz"
           wget -O source.tar.gz "$SOURCE_URL"
           
-          # 2. Calculate Hash
           HASH=$(sha256sum source.tar.gz | awk '{print $1}')
           echo "Calculated Hash: $HASH"
           
-          # 3. Patch PKGBUILD
-          # Replace 'SKIP' with the real hash
           sed -i "s/'SKIP'/'$HASH'/" packaging/arch/PKGBUILD
-          
-          # Move it to root for easy uploading
           cp packaging/arch/PKGBUILD PKGBUILD-release
 
       - name: Upload PKGBUILD to Release
