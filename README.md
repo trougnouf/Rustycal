@@ -4,6 +4,12 @@
 
 It features both a lightning-fast **TUI (Terminal UI)** and a modern **GUI (Graphical UI)** for desktop integration.
 
+![Cfait GUI Screenshot](https://upload.wikimedia.org/wikipedia/commons/1/12/Cfait_task_manager_v1.1.5_screenshot_%28GUI%29.png)
+*The Graphical Interface*
+
+![Cfait TUI Screenshot](https://upload.wikimedia.org/wikipedia/commons/0/00/Cfait_task_manager_v1.1.5_screenshot_%28TUI%29.png)
+*The Terminal Interface*
+
 ## Features
 
 *   **Dual Interface:** Run it in your terminal (`cfait`) or as a windowed app (`cfait-gui`).
@@ -85,7 +91,7 @@ When adding (`a`) or editing (`e`) a task, you can use shortcuts directly in the
 * [ ] TUI: cursor when naming tasks
 * [ ] TUI: list keywords when naming tasks
 * [ ] switch this todo to cfait and version control it here
-* [>] rename
+* [x] rename
 * [ ] move to gitlab-ci?
 
 ## License
