@@ -596,7 +596,7 @@ impl RustacheGui {
                 let input_placeholder = if self.editing_uid.is_some() {
                     "Edit Title..."
                 } else {
-                    "Add task (Buy Milk !1 @daily)..."
+                    "Add task (Buy cat food !1 @weekly)..."
                 };
                 let input_title = text_input(input_placeholder, &self.input_value)
                     .on_input(Message::InputChanged)

@@ -69,4 +69,5 @@ assets = [
     ["target/release/gui", "usr/bin/cfait-gui", "755"],
     # Desktop File
     ["assets/cfait.desktop", "usr/share/applications/", "644"],
+    ["assets/cfait.svg", "usr/share/icons/hicolor/scalable/apps/cfait.svg", "644"],
 ]

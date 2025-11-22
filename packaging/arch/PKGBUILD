@@ -28,4 +28,5 @@ package() {
   install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
 
   install -Dm644 "assets/cfait.desktop" "$pkgdir/usr/share/applications/cfait.desktop"
+  install -Dm644 "assets/cfait.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/cfait.svg"
 }

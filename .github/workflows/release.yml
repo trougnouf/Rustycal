@@ -55,6 +55,7 @@ jobs:
           # Assets
           cp README.md LICENSE "$STAGING/"
           cp assets/cfait.desktop "$STAGING/"
+          cp assets/cfait.svg "$STAGING/"
 
           # Compress
           tar -czvf "cfait-linux-${{ github.ref_name }}.tar.gz" "$STAGING"
