@@ -19,10 +19,14 @@ impl TaskStore {
         self.calendars.clear();
     }
 
-    pub fn get_all_categories(&self) -> Vec<String> {
+    pub fn get_all_categories(&self, hide_completed: bool) -> Vec<String> {
         let mut set = HashSet::new();
         for tasks in self.calendars.values() {
             for task in tasks {
+                // If we are hiding completed tasks, skip them during tag collection
+                if hide_completed && task.completed {
+                    continue;
+                }
                 for cat in &task.categories {
                     set.insert(cat.clone());
                 }

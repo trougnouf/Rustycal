@@ -48,7 +48,9 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
             (" Calendars [1] ".to_string(), items) // Return String
         }
         SidebarMode::Categories => {
-            let all_cats = state.store.get_all_categories();
+            let should_hide = state.hide_completed || state.hide_completed_in_tags;
+            let all_cats = state.store.get_all_categories(should_hide);
+
             let items: Vec<ListItem> = all_cats
                 .iter()
                 .map(|c| {

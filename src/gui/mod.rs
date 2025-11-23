@@ -52,6 +52,18 @@ impl GuiApp {
         Theme::Dark
     }
 
+    fn save_config(&self) {
+        let _ = Config {
+            url: self.ob_url.clone(),
+            username: self.ob_user.clone(),
+            password: self.ob_pass.clone(),
+            default_calendar: self.ob_default_cal.clone(),
+            hide_completed: self.hide_completed,
+            hide_completed_in_tags: self.hide_completed_in_tags,
+        }
+        .save();
+    }
+
     // Helper to re-run filters based on current state
     fn refresh_filtered_tasks(&mut self) {
         let cal_filter = if self.sidebar_mode == SidebarMode::Categories {
@@ -98,8 +110,11 @@ impl GuiApp {
                 Task::none()
             }
 
-            // SAVE CONFIG ON CONNECT
             Message::ObSubmit => {
+                self.save_config(); // Use helper
+                self.state = AppState::Loading;
+                self.error_msg = Some("Connecting...".to_string());
+                // We reconstruct config for the async call, or just use the fields
                 let config = Config {
                     url: self.ob_url.clone(),
                     username: self.ob_user.clone(),
@@ -108,8 +123,6 @@ impl GuiApp {
                     hide_completed: self.hide_completed,
                     hide_completed_in_tags: self.hide_completed_in_tags,
                 };
-                self.state = AppState::Loading;
-                self.error_msg = Some("Connecting...".to_string());
                 Task::perform(connect_and_fetch_wrapper(config), Message::Loaded)
             }
 
@@ -225,14 +238,15 @@ impl GuiApp {
                 Task::none()
             }
 
-            // NEW TOGGLES
             Message::ToggleHideCompleted(val) => {
                 self.hide_completed = val;
+                self.save_config(); // <--- PERSIST TO DISK
                 self.refresh_filtered_tasks();
                 Task::none()
             }
             Message::ToggleHideCompletedInTags(val) => {
                 self.hide_completed_in_tags = val;
+                self.save_config(); // <--- PERSIST TO DISK
                 self.refresh_filtered_tasks();
                 Task::none()
             }

@@ -122,8 +122,9 @@ fn view_sidebar_calendars(app: &GuiApp) -> Element<'_, Message> {
 }
 
 fn view_sidebar_categories(app: &GuiApp) -> Element<'_, Message> {
-    let all_cats = app.store.get_all_categories();
+    let should_hide = app.hide_completed || app.hide_completed_in_tags;
 
+    let all_cats = app.store.get_all_categories(should_hide);
     let logic_text = if app.match_all_categories {
         "Match: AND"
     } else {
