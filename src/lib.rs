@@ -4,7 +4,7 @@ pub mod config;
 pub mod model;
 
 #[cfg(feature = "tui")]
-pub mod ui;
+pub mod tui;
 
 #[cfg(feature = "gui")]
 pub mod gui;
