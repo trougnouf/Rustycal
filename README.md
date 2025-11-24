@@ -5,10 +5,10 @@
 It features both a lightning-fast **TUI (Terminal UI)** and a modern **GUI (Graphical UI)** for desktop integration.
 
 ![Cfait GUI Screenshot](https://commons.wikimedia.org/wiki/Special:FilePath/Cfait_task_manager_v0.1.6_screenshot_(GUI).png)
-*The Graphical Interface*
+*The Graphical Interface in v0.1.6*
 
 ![Cfait TUI Screenshot](https://commons.wikimedia.org/wiki/Special:FilePath/Cfait_task_manager_v0.1.6_screenshot_(TUI).png)
-*The Terminal Interface*
+*The Terminal Interface in v0.1.6*
 
 ## Features
 
@@ -86,6 +86,7 @@ When adding (`a`) or editing (`e`) a task, you can use shortcuts directly in the
 *   `@tomorrow`, `@today`, `@next week`, `@next month`, `@next year`: Sets Due Date relative to now.
 *   `@2025-12-31`: Sets specific Due Date (YYYY-MM-DD).
 *   `@daily`, `@weekly`, `@monthly`, `@yearly`, `@every 4 days`, `@every 2 weeks`, etc: Sets Recurrence.
+*   `#tag` (e.g. `#Gardening`) to set a tag / category.
 
 ## TODO
 * [ ] TUI: clickable

@@ -47,7 +47,6 @@ pub enum Message {
     CategoryMatchModeChanged(bool),
     RefreshedAll(Result<Vec<(String, Vec<TodoTask>)>, String>),
 
-    // NEW MESSAGES
     ToggleHideCompleted(bool),
     ToggleHideCompletedInTags(bool),
 }

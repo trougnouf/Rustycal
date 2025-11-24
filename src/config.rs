@@ -11,7 +11,6 @@ pub struct Config {
     pub password: String,
     pub default_calendar: Option<String>,
 
-    // NEW FIELDS
     #[serde(default)]
     pub hide_completed: bool,
     #[serde(default)]

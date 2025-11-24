@@ -34,7 +34,7 @@ pub struct GuiApp {
     pub selected_categories: HashSet<String>,
     pub match_all_categories: bool,
 
-    // NEW PREFERENCES
+    // PREFERENCES
     pub hide_completed: bool,
     pub hide_completed_in_tags: bool,
 
