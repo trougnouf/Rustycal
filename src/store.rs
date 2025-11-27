@@ -114,13 +114,15 @@ impl TaskStore {
                 match t.estimated_duration {
                     Some(mins) => {
                         if let Some(min) = options.min_duration
-                            && mins < min {
-                                return false;
-                            }
+                            && mins < min
+                        {
+                            return false;
+                        }
                         if let Some(max) = options.max_duration
-                            && mins > max {
-                                return false;
-                            }
+                            && mins > max
+                        {
+                            return false;
+                        }
                     }
                     None => {
                         if !options.include_unset_duration {
@@ -170,17 +172,18 @@ impl TaskStore {
                     for part in parts {
                         // 1. Duration Filter (~30m, ~<1h, ~>2h)
                         if part.starts_with('~') {
-                            // Support: ~<=, ~>=, ~<, ~>, ~=
-                            let (op, val_str) = if part.starts_with("~<=") {
-                                ("<=", &part[3..])
-                            } else if part.starts_with("~>=") {
-                                (">=", &part[3..])
-                            } else if part.starts_with("~<") {
-                                ("<", &part[2..])
-                            } else if part.starts_with("~>") {
-                                (">", &part[2..])
+                            let (op, val_str) = if let Some(stripped) = part.strip_prefix("~<=") {
+                                ("<=", stripped)
+                            } else if let Some(stripped) = part.strip_prefix("~>=") {
+                                (">=", stripped)
+                            } else if let Some(stripped) = part.strip_prefix("~<") {
+                                ("<", stripped)
+                            } else if let Some(stripped) = part.strip_prefix("~>") {
+                                (">", stripped)
+                            } else if let Some(stripped) = part.strip_prefix('~') {
+                                ("=", stripped)
                             } else {
-                                ("=", &part[1..])
+                                continue;
                             };
 
                             // Parse value
@@ -236,16 +239,18 @@ impl TaskStore {
                         }
 
                         if part.starts_with('!') {
-                            let (op, val_str) = if part.starts_with("!<=") {
-                                ("<=", &part[3..])
-                            } else if part.starts_with("!>=") {
-                                (">=", &part[3..])
-                            } else if part.starts_with("!<") {
-                                ("<", &part[2..])
-                            } else if part.starts_with("!>") {
-                                (">", &part[2..])
+                            let (op, val_str) = if let Some(stripped) = part.strip_prefix("!<=") {
+                                ("<=", stripped)
+                            } else if let Some(stripped) = part.strip_prefix("!>=") {
+                                (">=", stripped)
+                            } else if let Some(stripped) = part.strip_prefix("!<") {
+                                ("<", stripped)
+                            } else if let Some(stripped) = part.strip_prefix("!>") {
+                                (">", stripped)
+                            } else if let Some(stripped) = part.strip_prefix('!') {
+                                ("=", stripped)
                             } else {
-                                ("=", &part[1..])
+                                continue;
                             };
 
                             if let Ok(target) = val_str.parse::<u8>() {
@@ -286,16 +291,18 @@ impl TaskStore {
                         // 3. Due Date Filter (@<2025-01-01, @>today)
                         // Supports: @<YYYY-MM-DD, @>today, @tomorrow
                         if part.starts_with('@') {
-                            let (op, val_str) = if part.starts_with("@<=") {
-                                ("<=", &part[3..])
-                            } else if part.starts_with("@>=") {
-                                (">=", &part[3..])
-                            } else if part.starts_with("@<") {
-                                ("<", &part[2..])
-                            } else if part.starts_with("@>") {
-                                (">", &part[2..])
+                            let (op, val_str) = if let Some(stripped) = part.strip_prefix("@<=") {
+                                ("<=", stripped)
+                            } else if let Some(stripped) = part.strip_prefix("@>=") {
+                                (">=", stripped)
+                            } else if let Some(stripped) = part.strip_prefix("@<") {
+                                ("<", stripped)
+                            } else if let Some(stripped) = part.strip_prefix("@>") {
+                                (">", stripped)
+                            } else if let Some(stripped) = part.strip_prefix('@') {
+                                ("=", stripped)
                             } else {
-                                ("=", &part[1..])
+                                continue;
                             };
 
                             // Parse Target Date
