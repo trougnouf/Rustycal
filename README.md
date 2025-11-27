@@ -26,20 +26,60 @@ It features both an efficient **TUI (Terminal UI)** and a modern **GUI (Graphica
 *   **Offline-First:** Optimistic UI updates mean you never wait for the server.
 *   **Sane sorting:** Tasks are sorted by due date, then undated tasks are ordered by priority.
 
+
 ## Installation
 
-### 1. Build from Source
-Ensure you have Rust installed.
+### A. Pre-built Packages
+
+You can find pre-compiled binaries for Linux and Windows on the [**GitHub Releases page**](https://github.com/trougnouf/cfait/releases).
+
+*   **Arch Linux:** Install from the AUR using your favorite helper (e.g., `yay`, `paru`).
+    ```bash
+    # For the latest stable release
+    yay -S cfait
+
+    # For the latest development version from git
+    yay -S cfait-git
+    ```
+
+*   **Debian / Ubuntu:** Download the `.deb` file from the [releases page](https://github.com/trougnouf/cfait/releases) and install it:
+    ```bash
+    sudo dpkg -i /path/to/downloaded/cfait_*.deb
+    ```
+
+*   **Windows:** Download the `.zip` archive from the [releases page](https://github.com/trougnouf/cfait/releases), extract it, and run `cfait.exe` (TUI) or `cfait-gui.exe` (GUI).
+
+*   **Other Linux:** Download the generic `cfait-linux-*.tar.gz` archive, extract it, and place the binaries (`cfait`, `cfait-gui`) in your `$PATH` (e.g., `~/.local/bin/` or `/usr/local/bin/`).
+
+### B. From Crates.io (via Cargo)
+
+If you have Rust installed, you can install Cfait directly from crates.io.
 
 ```bash
-# Install the TUI (Default)
-cargo install --path .
+# Install both TUI and GUI
+cargo install cfait --features gui
 
-# Install the GUI (Optional)
-cargo install --path . --bin gui --no-default-features --features gui
+# Or, install only the TUI
+cargo install cfait
 ```
 
-### 2. Run
+### C. For Development
+
+If you want to contribute to Cfait, clone the repository and build it locally:
+
+```bash
+git clone https://github.com/trougnouf/cfait.git
+cd cfait
+
+# Run the TUI
+cargo run
+
+# Run the GUI
+cargo run --bin gui --no-default-features --features gui
+```
+
+
+### Run
 ```bash
 # Run TUI
 cfait
