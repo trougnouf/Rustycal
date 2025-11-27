@@ -67,6 +67,7 @@ pub struct GuiApp {
     pub ob_pass: String,
     pub ob_default_cal: Option<String>,
     pub ob_sort_months_input: String,
+    pub ob_insecure: bool,
 }
 
 impl Default for GuiApp {
@@ -109,6 +110,7 @@ impl Default for GuiApp {
             ob_user: String::new(),
             ob_pass: String::new(),
             ob_default_cal: None,
+            ob_insecure: false, // Default to Secure
         }
     }
 }

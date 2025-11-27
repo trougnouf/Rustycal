@@ -2,6 +2,7 @@ use crate::model::{CalendarListEntry, Task};
 use libdav::CalDavClient;
 use libdav::PropertyName;
 use libdav::dav::WebDavClient;
+use rustls_native_certs;
 
 use http::Uri;
 use hyper_rustls::HttpsConnectorBuilder;
@@ -24,19 +25,55 @@ pub struct RustyClient {
 }
 
 impl RustyClient {
-    pub fn new(url: &str, user: &str, pass: &str) -> Result<Self, String> {
+    pub fn new(url: &str, user: &str, pass: &str, insecure: bool) -> Result<Self, String> {
         let uri: Uri = url
             .parse()
             .map_err(|e: http::uri::InvalidUri| e.to_string())?;
-        let tls_config = rustls::ClientConfig::builder()
-            .dangerous()
-            .with_custom_certificate_verifier(Arc::new(NoVerifier))
-            .with_no_client_auth();
-        let https_connector = HttpsConnectorBuilder::new()
-            .with_tls_config(tls_config)
-            .https_or_http()
-            .enable_http1()
-            .build();
+
+        let https_connector = if insecure {
+            // INSECURE PATH
+            let tls_config = rustls::ClientConfig::builder()
+                .dangerous()
+                .with_custom_certificate_verifier(Arc::new(NoVerifier))
+                .with_no_client_auth();
+
+            HttpsConnectorBuilder::new()
+                .with_tls_config(tls_config)
+                .https_or_http()
+                .enable_http1()
+                .build()
+        } else {
+            // SECURE PATH (Final Corrected Version for v0.8+)
+            let mut root_store = rustls::RootCertStore::empty();
+
+            // This function now returns a struct, not a Result.
+            let result = rustls_native_certs::load_native_certs();
+
+            // The `result.errors` vector contains any non-fatal errors.
+            // We add all the certificates that were successfully loaded.
+            root_store.add_parsable_certificates(result.certs);
+
+            if root_store.is_empty() {
+                // This is the true failure condition: not a single valid
+                // certificate could be loaded from the system.
+                return Err(
+                "No valid system certificates found. Cannot establish secure connection. Consider using 'allow_insecure_certs'."
+                .to_string()
+            );
+            }
+
+            let tls_config = rustls::ClientConfig::builder()
+                .with_root_certificates(root_store)
+                .with_no_client_auth();
+
+            HttpsConnectorBuilder::new()
+                .with_tls_config(tls_config)
+                .https_or_http()
+                .enable_http1()
+                .build()
+        };
+        // -------------------------------------------------------------------
+
         let http_client = Client::builder(TokioExecutor::new()).build(https_connector);
         let auth_client = AddAuthorization::basic(http_client, user, pass);
         let webdav = WebDavClient::new(uri, auth_client);

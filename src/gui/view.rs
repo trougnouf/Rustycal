@@ -924,7 +924,10 @@ fn view_settings(app: &GuiApp) -> Element<'_, Message> {
         .padding(10)
         .on_press(Message::ObSubmit),
     );
-
+    let insecure_check = checkbox("Allow Insecure SSL (Self-signed/VPN)", app.ob_insecure)
+        .on_toggle(Message::ObInsecureToggled)
+        .size(16)
+        .text_size(14);
     let form = column![
         text("CalDAV Server URL:"),
         text_input("https://...", &app.ob_url)
@@ -939,6 +942,7 @@ fn view_settings(app: &GuiApp) -> Element<'_, Message> {
             .on_input(Message::ObPassChanged)
             .secure(true)
             .padding(10),
+        insecure_check,
         picker,
         prefs,
         sorting_ui,

@@ -18,6 +18,7 @@ pub enum Message {
     ObUrlChanged(String),
     ObUserChanged(String),
     ObPassChanged(String),
+    ObInsecureToggled(bool),
     ObDefaultCalChanged(String),
     ObSubmit,
     OpenSettings,

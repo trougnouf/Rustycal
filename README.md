@@ -6,10 +6,10 @@
 It features both an efficient **TUI (Terminal UI)** and a modern **GUI (Graphical UI)** for desktop integration.
 
 ![Cfait GUI Screenshot](https://commons.wikimedia.org/wiki/Special:FilePath/Cfait_task_manager_v0.2.0_screenshot_(GUI).png)
-> The Graphical Interface in v0.1.9
+> The Graphical Interface in v0.2.0
 
 ![Cfait TUI Screenshot](https://commons.wikimedia.org/wiki/Special:FilePath/Cfait_task_manager_v0.2.0_screenshot_(TUI).png)
-> The Terminal Interface in v0.1.9
+> The Terminal Interface in v0.2.0
 
 ## Features
 
@@ -102,6 +102,11 @@ Create a config file at:
 url = "https://caldav.example.com/remote.php/dav/calendars/user/"
 username = "myuser"
 password = "mypassword"
+
+# Security: Allow self-signed certificates (Radicale/VPN)
+# Default: false
+allow_insecure_certs = true 
+
 default_calendar = "Personal" # Optional: Auto-selects this list on startup
 
 # Hide completed tasks in all views
@@ -169,7 +174,7 @@ The search bar (in both GUI and TUI) supports powerful filtering syntax:
 *   `is:ongoing`: Show only ongoing (started) tasks.
 *   `is:active`: Show only active (not completed/cancelled) tasks.
 
-**Example:** `~<=15m !<4 is:active` finds quick, high-priority, active tasks.
+**Example:** `~<20m !<4 #gardening` finds quick, high-priority, gardening tasks.
 
 ## License
 GPL3

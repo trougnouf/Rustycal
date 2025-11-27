@@ -42,6 +42,9 @@ pub async fn run() -> Result<()> {
         default_hook(info);
     }));
 
+    let config_path_for_error = config::Config::get_path_string()
+        .unwrap_or_else(|_| "[Could not determine config path]".to_string());
+
     // Load Config
     let config_result = config::Config::load();
     let (
@@ -53,6 +56,7 @@ pub async fn run() -> Result<()> {
         hide_fully_completed_tags,
         tag_aliases,
         sort_cutoff,
+        allow_insecure,
     ) = match config_result {
         Ok(cfg) => (
             cfg.url,
@@ -63,9 +67,17 @@ pub async fn run() -> Result<()> {
             cfg.hide_fully_completed_tags,
             cfg.tag_aliases,
             cfg.sort_cutoff_months,
+            cfg.allow_insecure_certs,
         ),
         Err(_) => {
-            eprintln!("Config not found. Please run 'cfait-gui' to set up credentials.");
+            let path_str = match config::Config::get_path_string() {
+                Ok(path) => path,
+                Err(_) => "[Could not determine config path]".to_string(),
+            };
+            eprintln!("Config file not found.");
+            eprintln!("Please create a configuration file at:");
+            eprintln!("  {}", path_str);
+            eprintln!("\nOr run 'cfait-gui' once to generate it automatically.");
             return Ok(());
         }
     };
@@ -90,7 +102,7 @@ pub async fn run() -> Result<()> {
     // --- NETWORK THREAD ---
     tokio::spawn(async move {
         // ... (Client init, Calendar Fetch, Task Fetch remain the same) ...
-        let client = match RustyClient::new(&url, &user, &pass) {
+        let client = match RustyClient::new(&url, &user, &pass, allow_insecure) {
             Ok(c) => c,
             Err(e) => {
                 let _ = event_tx.send(AppEvent::Error(e)).await;
@@ -102,47 +114,78 @@ pub async fn run() -> Result<()> {
             .await;
 
         // A. Fetch Calendars
+        // A. Fetch Calendars with proper error handling
         let calendars = match client.get_calendars().await {
-            Ok(cals) => {
-                let _ = event_tx.send(AppEvent::CalendarsLoaded(cals.clone())).await;
-                Some(cals)
-            }
+            Ok(cals) => cals, // Success, we get the Vec of calendars
             Err(e) => {
-                let _ = event_tx
-                    .send(AppEvent::Status(format!("Cal warning: {}", e)))
-                    .await;
-                None
+                // Failure, construct a helpful error message
+                let err_str = e.to_string();
+                let final_err_msg = if err_str.contains("InvalidCertificate") {
+                    let mut helpful_msg =
+                        "Connection failed: The server presented an invalid TLS/SSL certificate."
+                            .to_string();
+
+                    let config_advice = format!(
+                        "\n\nTo fix this, please edit your config file:\n  {}",
+                        config_path_for_error
+                    );
+
+                    if !allow_insecure {
+                        helpful_msg.push_str(
+                    "\nIf this is a self-hosted server (like Radicale), try setting 'allow_insecure_certs = true' in your config.",
+                );
+                    } else {
+                        helpful_msg.push_str(
+                    "\nEven with 'allow_insecure_certs = true', the certificate is invalid. Please check your server's TLS/SSL configuration.",
+                );
+                    }
+                    helpful_msg.push_str(&config_advice);
+                    helpful_msg.push_str(&format!("\n\nDetails: {}", err_str));
+                    helpful_msg
+                } else {
+                    // Not a certificate error, just pass it through
+                    err_str
+                };
+
+                // Send a fatal error event to the UI and stop this network thread.
+                let _ = event_tx.send(AppEvent::Error(final_err_msg)).await;
+                return;
             }
         };
 
-        // B. Load Cache (Fast) & Then Network (Slow)
-        if let Some(cals) = &calendars {
-            // 1. Cache Load
-            let mut cached_results = Vec::new();
-            for cal in cals {
-                if let Ok(tasks) = Cache::load(&cal.href) {
-                    cached_results.push((cal.href.clone(), tasks));
-                }
-            }
-            if !cached_results.is_empty() {
-                let _ = event_tx.send(AppEvent::TasksLoaded(cached_results)).await;
-                let _ = event_tx
-                    .send(AppEvent::Status("Loaded from cache.".to_string()))
-                    .await;
-            }
+        // If we reach here, get_calendars() was successful.
+        let _ = event_tx
+            .send(AppEvent::CalendarsLoaded(calendars.clone()))
+            .await;
 
-            // 2. Network Sync
+        // B. Load Cache (Fast) & Then Network (Slow)
+        // 1. Cache Load
+        let mut cached_results = Vec::new();
+        for cal in &calendars {
+            // Note: Use `&calendars` here now
+            if let Ok(tasks) = Cache::load(&cal.href) {
+                cached_results.push((cal.href.clone(), tasks));
+            }
+        }
+        if !cached_results.is_empty() {
+            let _ = event_tx.send(AppEvent::TasksLoaded(cached_results)).await;
             let _ = event_tx
-                .send(AppEvent::Status("Syncing...".to_string()))
+                .send(AppEvent::Status("Loaded from cache.".to_string()))
                 .await;
-            match client.get_all_tasks(cals).await {
-                Ok(results) => {
-                    let _ = event_tx.send(AppEvent::TasksLoaded(results)).await;
-                    let _ = event_tx.send(AppEvent::Status("Ready.".to_string())).await;
-                }
-                Err(e) => {
-                    let _ = event_tx.send(AppEvent::Error(e)).await;
-                }
+        }
+
+        // 2. Network Sync
+        let _ = event_tx
+            .send(AppEvent::Status("Syncing...".to_string()))
+            .await;
+        match client.get_all_tasks(&calendars).await {
+            // Note: Use `&calendars` here too
+            Ok(results) => {
+                let _ = event_tx.send(AppEvent::TasksLoaded(results)).await;
+                let _ = event_tx.send(AppEvent::Status("Ready.".to_string())).await;
+            }
+            Err(e) => {
+                let _ = event_tx.send(AppEvent::Error(e)).await;
             }
         }
 

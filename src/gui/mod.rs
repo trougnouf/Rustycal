@@ -68,6 +68,7 @@ impl GuiApp {
             default_calendar: self.ob_default_cal.clone(),
             hide_completed: self.hide_completed,
             hide_fully_completed_tags: self.hide_fully_completed_tags,
+            allow_insecure_certs: self.ob_insecure,
             tag_aliases: self.tag_aliases.clone(),
             sort_cutoff_months: self.sort_cutoff_months,
         }
@@ -112,6 +113,7 @@ impl GuiApp {
                     Some(m) => m.to_string(),
                     None => "".to_string(),
                 };
+                self.ob_insecure = config.allow_insecure_certs;
 
                 self.state = AppState::Loading;
                 Task::perform(connect_and_fetch_wrapper(config), Message::Loaded)
@@ -137,6 +139,10 @@ impl GuiApp {
                 self.ob_default_cal = Some(v);
                 Task::none()
             }
+            Message::ObInsecureToggled(val) => {
+                self.ob_insecure = val;
+                Task::none()
+            }
 
             Message::ObSubmit => {
                 if self.ob_sort_months_input.trim().is_empty() {
@@ -145,20 +151,40 @@ impl GuiApp {
                     self.sort_cutoff_months = Some(n);
                 }
 
-                self.save_config();
-                self.state = AppState::Loading;
-                self.error_msg = Some("Connecting...".to_string());
-                let config = Config {
-                    url: self.ob_url.clone(),
-                    username: self.ob_user.clone(),
-                    password: self.ob_pass.clone(),
-                    default_calendar: self.ob_default_cal.clone(),
+                // 1. Try to load the existing config to preserve settings like aliases.
+                // If it fails (e.g., first run), create a new, empty config struct.
+                let mut config_to_save = Config::load().unwrap_or_else(|_| Config {
+                    url: String::new(),
+                    username: String::new(),
+                    password: String::new(),
+                    default_calendar: None,
+                    allow_insecure_certs: false,
                     hide_completed: self.hide_completed,
                     hide_fully_completed_tags: self.hide_fully_completed_tags,
-                    tag_aliases: self.tag_aliases.clone(),
-                    sort_cutoff_months: self.sort_cutoff_months,
-                };
-                Task::perform(connect_and_fetch_wrapper(config), Message::Loaded)
+                    tag_aliases: self.tag_aliases.clone(), // Use in-memory aliases if any
+                    sort_cutoff_months: Some(6),
+                });
+
+                // 2. Modify the loaded (or new) config with the values from the UI.
+                // This updates credentials without touching other saved settings.
+                config_to_save.url = self.ob_url.clone();
+                config_to_save.username = self.ob_user.clone();
+                config_to_save.password = self.ob_pass.clone();
+                config_to_save.default_calendar = self.ob_default_cal.clone();
+                config_to_save.allow_insecure_certs = self.ob_insecure;
+                config_to_save.hide_completed = self.hide_completed;
+                config_to_save.hide_fully_completed_tags = self.hide_fully_completed_tags;
+                config_to_save.tag_aliases = self.tag_aliases.clone();
+                config_to_save.sort_cutoff_months = self.sort_cutoff_months;
+
+                // 3. Save the merged configuration.
+                let _ = config_to_save.save();
+
+                self.state = AppState::Loading;
+                self.error_msg = Some("Connecting...".to_string());
+
+                // Use the newly saved config for the connection attempt.
+                Task::perform(connect_and_fetch_wrapper(config_to_save), Message::Loaded)
             }
 
             // LOAD CONFIG ON OPEN SETTINGS
@@ -170,6 +196,7 @@ impl GuiApp {
                     self.ob_default_cal = cfg.default_calendar;
                     self.hide_completed = cfg.hide_completed;
                     self.hide_fully_completed_tags = cfg.hide_fully_completed_tags;
+                    self.ob_insecure = cfg.allow_insecure_certs;
                     self.tag_aliases = cfg.tag_aliases; // Load Map
                     self.sort_cutoff_months = cfg.sort_cutoff_months;
                     self.ob_sort_months_input = match cfg.sort_cutoff_months {
@@ -213,6 +240,7 @@ impl GuiApp {
                         default_calendar: self.ob_default_cal.clone(),
                         hide_completed: self.hide_completed,
                         hide_fully_completed_tags: self.hide_fully_completed_tags,
+                        allow_insecure_certs: self.ob_insecure,
                         tag_aliases: self.tag_aliases.clone(),
                         sort_cutoff_months: self.sort_cutoff_months,
                     }
@@ -859,9 +887,42 @@ async fn connect_and_fetch(
     ),
     String,
 > {
-    let client = RustyClient::new(&config.url, &config.username, &config.password)
-        .map_err(|e| e.to_string())?;
-    let calendars = client.get_calendars().await.unwrap_or_default();
+    // This call is simple and should not have the complex error mapping.
+    let client = RustyClient::new(
+        &config.url,
+        &config.username,
+        &config.password,
+        config.allow_insecure_certs,
+    )
+    .map_err(|e| e.to_string())?;
+
+    let calendars = client.get_calendars().await.map_err(|e| {
+        let err_str = e.to_string();
+        // Check for common self-signed certificate errors.
+        if err_str.contains("InvalidCertificate") {
+            let mut helpful_msg =
+                "Connection failed: The server presented an invalid TLS/SSL certificate.".to_string();
+
+            // Give different advice based on whether the user has already tried the insecure option.
+            if !config.allow_insecure_certs {
+                helpful_msg.push_str(
+                    "\n\nIf you are connecting to a self-hosted server (like Radicale), try enabling the 'Allow Insecure SSL' option in Settings.",
+                );
+            } else {
+                helpful_msg.push_str(
+                    "\n\nEven with 'Allow Insecure SSL' enabled, the certificate is structurally invalid (e.g., a CA certificate is being used as a server certificate). Please check your server's TLS/SSL configuration.",
+                );
+            }
+            // Always include the technical details for power-users.
+            helpful_msg.push_str(&format!("\n\nDetails: {}", err_str));
+            helpful_msg
+        } else {
+            // If it's not a certificate error, just pass it through.
+            err_str
+        }
+    })?;
+
+    // The rest of the function proceeds as before.
     let mut active_href = None;
     if let Some(def_cal) = &config.default_calendar {
         if let Some(found) = calendars

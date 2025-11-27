@@ -22,6 +22,9 @@ pub struct Config {
     pub default_calendar: Option<String>,
 
     #[serde(default)]
+    pub allow_insecure_certs: bool,
+
+    #[serde(default)]
     pub hide_completed: bool,
     #[serde(default = "default_true")]
     pub hide_fully_completed_tags: bool,
