@@ -27,6 +27,7 @@ pub struct Task {
     pub summary: String,
     pub description: String,
     pub status: TaskStatus,
+    pub estimated_duration: Option<u32>,
     pub due: Option<DateTime<Utc>>,
     pub priority: u8,
     pub parent_uid: Option<String>,
@@ -57,7 +58,30 @@ impl Task {
                 self.priority = p;
                 continue;
             }
+            // 3. Duration (~30m, ~1h)
+            if let Some(dur_str) = word.strip_prefix('~') {
+                let lower = dur_str.to_lowercase();
+                let minutes = if let Some(n) = lower.strip_suffix('m') {
+                    n.parse::<u32>().ok()
+                } else if let Some(n) = lower.strip_suffix('h') {
+                    n.parse::<u32>().ok().map(|h| h * 60)
+                } else if let Some(n) = lower.strip_suffix('d') {
+                    n.parse::<u32>().ok().map(|d| d * 24 * 60)
+                } else if let Some(n) = lower.strip_suffix('w') {
+                    n.parse::<u32>().ok().map(|w| w * 7 * 24 * 60)
+                } else if let Some(n) = lower.strip_suffix("mo") {
+                    n.parse::<u32>().ok().map(|mo| mo * 30 * 24 * 60)
+                } else if let Some(n) = lower.strip_suffix('y') {
+                    n.parse::<u32>().ok().map(|y| y * 365 * 24 * 60)
+                } else {
+                    None
+                };
 
+                if let Some(m) = minutes {
+                    self.estimated_duration = Some(m);
+                    continue;
+                }
+            }
             // 2. Categories (#tag)
             if let Some(stripped) = word.strip_prefix('#') {
                 let cat = stripped.to_string();
@@ -180,6 +204,23 @@ impl Task {
         if let Some(d) = self.due {
             s.push_str(&format!(" @{}", d.format("%Y-%m-%d")));
         }
+        if let Some(mins) = self.estimated_duration {
+            // Helper for formatting
+            let dur_str = if mins >= 525600 {
+                format!("~{}y", mins / 525600)
+            } else if mins >= 43200 {
+                format!("~{}mo", mins / 43200)
+            } else if mins >= 10080 {
+                format!("~{}w", mins / 10080)
+            } else if mins >= 1440 {
+                format!("~{}d", mins / 1440)
+            } else if mins >= 60 {
+                format!("~{}h", mins / 60)
+            } else {
+                format!("~{}m", mins)
+            };
+            s.push_str(&format!(" {}", dur_str));
+        }
         if let Some(r) = &self.rrule {
             if r == "FREQ=DAILY" {
                 s.push_str(" @daily");
@@ -203,6 +244,7 @@ impl Task {
             summary: String::new(),
             description: String::new(),
             status: TaskStatus::NeedsAction,
+            estimated_duration: None,
             due: None,
             priority: 0,
             parent_uid: None,
@@ -382,9 +424,32 @@ impl Task {
             TaskStatus::Cancelled => todo.status(TodoStatus::Cancelled),
         };
 
+        // Helper for ISO Duration
+        fn format_iso_duration(mins: u32) -> String {
+            if mins % (24 * 60) == 0 {
+                format!("P{}D", mins / (24 * 60))
+            } else if mins % 60 == 0 {
+                format!("PT{}H", mins / 60)
+            } else {
+                format!("PT{}M", mins)
+            }
+        }
+
         if let Some(dt) = self.due {
             let formatted = dt.format("%Y%m%dT%H%M%SZ").to_string();
             todo.add_property("DUE", &formatted);
+
+            // Due exists -> Use X-ESTIMATED-DURATION
+            if let Some(mins) = self.estimated_duration {
+                let val = format_iso_duration(mins);
+                todo.add_property("X-ESTIMATED-DURATION", &val);
+            }
+        } else {
+            // No Due -> Use Standard DURATION
+            if let Some(mins) = self.estimated_duration {
+                let val = format_iso_duration(mins);
+                todo.add_property("DURATION", &val);
+            }
         }
         if self.priority > 0 {
             todo.priority(self.priority.into());
@@ -497,7 +562,50 @@ impl Task {
             .properties()
             .get("RRULE")
             .map(|p| p.value().to_string());
+        // Duration Parsing
+        let parse_dur = |val: &str| -> Option<u32> {
+            let mut minutes = 0;
+            let mut num_buf = String::new();
+            let mut in_time = false;
+            for c in val.chars() {
+                if c == 'T' {
+                    in_time = true;
+                } else if c.is_numeric() {
+                    num_buf.push(c);
+                } else if !num_buf.is_empty() {
+                    let n = num_buf.parse::<u32>().unwrap_or(0);
+                    match c {
+                        'D' => minutes += n * 24 * 60,
+                        'H' => {
+                            if in_time {
+                                minutes += n * 60
+                            }
+                        }
+                        'M' => {
+                            if in_time {
+                                minutes += n
+                            }
+                        }
+                        'W' => minutes += n * 7 * 24 * 60,
+                        _ => {}
+                    }
+                    num_buf.clear();
+                }
+            }
+            if minutes > 0 { Some(minutes) } else { None }
+        };
 
+        let mut estimated_duration = todo
+            .properties()
+            .get("X-ESTIMATED-DURATION")
+            .and_then(|p| parse_dur(p.value()));
+
+        if estimated_duration.is_none() {
+            estimated_duration = todo
+                .properties()
+                .get("DURATION")
+                .and_then(|p| parse_dur(p.value()));
+        }
         let mut categories = Vec::new();
         if let Some(multi_props) = todo.multi_properties().get("CATEGORIES") {
             for prop in multi_props {
@@ -562,6 +670,7 @@ impl Task {
             summary,
             description,
             status,
+            estimated_duration,
             due,
             priority,
             parent_uid,
@@ -578,7 +687,7 @@ impl Task {
 
 impl Ord for Task {
     fn cmp(&self, other: &Self) -> Ordering {
-        // Use the same comparison logic but without cutoff (always None)
+        // Use custom comparator
         self.compare_with_cutoff(other, None)
     }
 }

@@ -130,6 +130,24 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
                 None => "".to_string(),
             };
 
+            let dur_str = if let Some(mins) = t.estimated_duration {
+                if mins >= 525600 {
+                    format!(" [~{}y]", mins / 525600)
+                } else if mins >= 43200 {
+                    format!(" [~{}mo]", mins / 43200)
+                } else if mins >= 10080 {
+                    format!(" [~{}w]", mins / 10080)
+                } else if mins >= 1440 {
+                    format!(" [~{}d]", mins / 1440)
+                } else if mins >= 60 {
+                    format!(" [~{}h]", mins / 60)
+                } else {
+                    format!(" [~{}m]", mins)
+                }
+            } else {
+                "".to_string()
+            };
+
             let show_indent = state.active_cal_href.is_some() && state.mode != InputMode::Searching;
             let indent = if show_indent {
                 "  ".repeat(t.depth)
@@ -145,8 +163,8 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
             }
 
             let summary = format!(
-                "{}{} {}{}{}{}{}",
-                indent, checkbox, t.summary, due_str, recur_str, cat_str, blocked_str
+                "{}{} {}{}{}{}{}{}",
+                indent, checkbox, t.summary, dur_str, due_str, recur_str, cat_str, blocked_str
             );
             ListItem::new(Line::from(vec![Span::styled(summary, style)]))
         })

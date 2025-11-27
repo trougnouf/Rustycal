@@ -3,7 +3,7 @@
 
 **Cfait** is a simple, elegant, and lightweight CalDAV task manager, written in Rust.
 
-It features both a lightning-fast **TUI (Terminal UI)** and a modern **GUI (Graphical UI)** for desktop integration.
+It features both an efficient **TUI (Terminal UI)** and a modern **GUI (Graphical UI)** for desktop integration.
 
 ![Cfait GUI Screenshot](https://commons.wikimedia.org/wiki/Special:FilePath/Cfait_task_manager_v0.1.9_screenshot_(GUI).png)
 > The Graphical Interface in v0.1.9
@@ -14,9 +14,11 @@ It features both a lightning-fast **TUI (Terminal UI)** and a modern **GUI (Grap
 ## Features
 
 *   **Dual Interface:** Run it in your terminal (`cfait`) or as a windowed app (`cfait-gui`).
-*   **Smart Input:** Add tasks naturally: `Buy cat food !1 @tomorrow` sets High Priority and Due Date automatically.
+*   **Smart Input:** Add tasks naturally: `Buy cat food !1 @tomorrow ~15m` sets Priority, Due Date, and Duration automatically.
+*   **GTD Workflow:** Mark tasks as **In Process** (`>`), **Cancelled** (`x`), or **Done**.
+*   **Duration Estimation:** Estimate time (`~2h`) and filter tasks by duration (`~<30m`).
 *   **Syncs Everywhere:** Fully compatible with standard CalDAV servers (Radicale, Nextcloud, iCloud, etc.).
-*   **Tag Support:** Organize tasks across all calendars using tags (e.g., `#work`, `#urgent`).
+*   **Tag Support:** Organize tasks across all calendars using tags (e.g., `#woodworking`, `#project_potato`).
 *   **Tag Aliases:** Define shortcuts (e.g., `#groceries`) that automatically expand into multiple tags (e.g., `#groceries`, `#shopping`, `#home`).
 *   **Dependencies:** Link tasks using RFC 9253 (Blocked By) logic.
 *   **Hierarchy Support:** Create sub-tasks and organize nested lists easily.
@@ -82,12 +84,15 @@ cfait = ["dev", "rust"]           # Typing #cfait will add #cfait, #dev and #rus
 | | `q` | Quit |
 | **Task List** | `j` / `k` | Move Down / Up |
 | | `Space` | **Toggle** Completion |
+| | `s` | **Start / Pause** (Mark In-Process) |
+| | `x` | **Cancel** Task |
 | | `a` | **Add** Task (Type name, press Enter) |
 | | `e` | **Edit** Task Title |
 | | `E` | **Edit** Task Description (Shift+e) |
 | | `d` | **Delete** Task |
 | | `y` | **Yank** (Copy ID for linking) |
 | | `b` | **Block** (Mark current task as blocked by Yanked task) |
+| | `r` | **Refresh** (Force sync) |
 | | `H` | Toggle **Hide Completed** tasks |
 | | `/` | **Search** / Filter Tasks |
 | | `+` / `-` | Increase / Decrease **Priority** |
@@ -103,9 +108,28 @@ When adding (`a`) or editing (`e`) a task, you can use shortcuts directly in the
 *   `!1` to `!9`: Sets Priority (1 is High, 9 is Low).
 *   `@tomorrow`, `@today`, `@next week`, `@next month`, `@next year`: Sets Due Date relative to now.
 *   `@2025-12-31`: Sets specific Due Date (YYYY-MM-DD).
+*   `~30m`, `~1h`, `~2d`: Sets **Estimated Duration**.
 *   `@daily`, `@weekly`, `@monthly`, `@yearly`, `@every 4 days`, `@every 2 weeks`, etc: Sets Recurrence.
 *   `#tag` (e.g. `#Gardening`) to set a tag / category.
     *   **Aliases:** If you have configured aliases (e.g. `groceries = ["home"]`), typing `#groceries` will automatically apply `#groceries` AND `#home`.
+
+## Advanced Search
+The search bar (in both GUI and TUI) supports powerful filtering syntax:
+
+*   `text`: Matches title or description.
+*   `#tag`: Filters by tag (e.g. `#work`).
+*   `~<30m`: Duration less than 30 mins.
+*   `~>=1h`: Duration greater or equal to 1 hour.
+*   `!<3`: Priority higher than 3 (1 or 2).
+*   `!>=5`: Priority 5 or lower.
+*   `@<2025-01-01`: Due before specific date.
+*   `@<1w`: Due within 1 week from today.
+*   `@>=2d`: Due at least 2 days from today.
+*   `is:done`: Show only completed/cancelled tasks.
+*   `is:ongoing`: Show only ongoing (started) tasks.
+*   `is:active`: Show only active (not completed/cancelled) tasks.
+
+**Example:** `~<15m #urgent is:active` finds quick, urgent, active tasks.
 
 ## License
 GPL3

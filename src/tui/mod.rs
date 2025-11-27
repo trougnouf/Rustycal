@@ -497,16 +497,43 @@ pub async fn run() -> Result<()> {
                     InputMode::Normal => match key.code {
                         KeyCode::Char('s') => {
                             if app_state.active_focus == Focus::Main
-                                && let Some(view_task) = app_state.get_selected_task().cloned()
+                                && let Some(task) = app_state.get_selected_task().cloned()
                             {
-                                let _ = action_tx.send(Action::MarkInProcess(view_task)).await;
+                                // Optimistic
+                                let href = task.calendar_href.clone();
+                                if let Some(list) = app_state.store.calendars.get_mut(&href)
+                                    && let Some(t) = list.iter_mut().find(|t| t.uid == task.uid)
+                                {
+                                    if t.status == crate::model::TaskStatus::InProcess {
+                                        t.status = crate::model::TaskStatus::NeedsAction;
+                                    } else {
+                                        t.status = crate::model::TaskStatus::InProcess;
+                                    }
+                                }
+                                app_state.refresh_filtered_view();
+                                let _ = action_tx.send(Action::MarkInProcess(task)).await;
                             }
                         }
+
                         KeyCode::Char('x') => {
                             if app_state.active_focus == Focus::Main
-                                && let Some(view_task) = app_state.get_selected_task().cloned()
+                                && let Some(task) = app_state.get_selected_task().cloned()
                             {
-                                let _ = action_tx.send(Action::MarkCancelled(view_task)).await;
+                                // Optimistic Update
+                                let href = task.calendar_href.clone();
+                                if let Some(list) = app_state.store.calendars.get_mut(&href)
+                                    && let Some(t) = list.iter_mut().find(|t| t.uid == task.uid)
+                                {
+                                    if t.status == crate::model::TaskStatus::Cancelled {
+                                        t.status = crate::model::TaskStatus::NeedsAction;
+                                    } else {
+                                        t.status = crate::model::TaskStatus::Cancelled;
+                                    }
+                                }
+                                app_state.refresh_filtered_view();
+
+                                // Send Network Action
+                                let _ = action_tx.send(Action::MarkCancelled(task)).await;
                             }
                         }
                         KeyCode::Char('q') => {

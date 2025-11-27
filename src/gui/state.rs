@@ -41,6 +41,11 @@ pub struct GuiApp {
     pub hide_fully_completed_tags: bool,
     pub sort_cutoff_months: Option<u32>,
 
+    // Filter State
+    pub filter_min_duration: Option<u32>,
+    pub filter_max_duration: Option<u32>,
+    pub filter_include_unset_duration: bool,
+
     // Inputs - Main
     pub input_value: String,
     pub description_value: String,
@@ -84,6 +89,10 @@ impl Default for GuiApp {
             hide_fully_completed_tags: true,
             sort_cutoff_months: Some(6),
             ob_sort_months_input: "6".to_string(),
+
+            filter_min_duration: None,
+            filter_max_duration: None,
+            filter_include_unset_duration: true,
 
             input_value: String::new(),
             description_value: String::new(),

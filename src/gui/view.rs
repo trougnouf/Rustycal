@@ -8,6 +8,32 @@ use iced::widget::{
 };
 use iced::{Background, Color, Element, Length, Theme};
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DurationOpt(Option<u32>, String);
+
+impl std::fmt::Display for DurationOpt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.1)
+    }
+}
+
+// Formatting Helper
+fn format_mins(m: u32) -> String {
+    if m >= 525600 {
+        format!("{}y", m / 525600)
+    } else if m >= 43200 {
+        format!("{}mo", m / 43200)
+    } else if m >= 10080 {
+        format!("{}w", m / 10080)
+    } else if m >= 1440 {
+        format!("{}d", m / 1440)
+    } else if m >= 60 {
+        format!("{}h", m / 60)
+    } else {
+        format!("{}m", m)
+    }
+}
+
 pub fn root_view(app: &GuiApp) -> Element<'_, Message> {
     match app.state {
         AppState::Loading => container(text("Loading...").size(30))
@@ -123,7 +149,7 @@ fn view_sidebar_calendars(app: &GuiApp) -> Element<'_, Message> {
 }
 
 fn view_sidebar_categories(app: &GuiApp) -> Element<'_, Message> {
-    // Pass both flags to get_all_categories
+    // 1. Existing Category Logic
     let all_cats = app.store.get_all_categories(
         app.hide_completed,
         app.hide_fully_completed_tags,
@@ -148,48 +174,115 @@ fn view_sidebar_categories(app: &GuiApp) -> Element<'_, Message> {
         logic_btn
     ]
     .align_y(iced::Alignment::Center)
-    // FIX: Add right padding so the scrollbar doesn't cover the button
     .padding(iced::Padding {
         right: 15.0,
         ..Default::default()
     });
 
-    if all_cats.is_empty() {
-        return column![
+    let tags_list: Element<'_, Message> = if all_cats.is_empty() {
+        column![
             header,
             text("No tags found")
                 .size(14)
                 .color(Color::from_rgb(0.5, 0.5, 0.5))
         ]
         .spacing(10)
-        .into();
+        .into()
+    } else {
+        let list = column(
+            all_cats
+                .into_iter()
+                .map(|cat| {
+                    let is_selected = app.selected_categories.contains(&cat);
+                    let cat_clone = cat.clone();
+                    let display_name = if cat == UNCATEGORIZED_ID {
+                        "Uncategorized".to_string()
+                    } else {
+                        format!("#{}", cat)
+                    };
+
+                    checkbox(display_name, is_selected)
+                        .size(18)
+                        .text_size(16)
+                        .on_toggle(move |_| Message::CategoryToggled(cat_clone.clone()))
+                        .into()
+                })
+                .collect::<Vec<_>>(),
+        )
+        .spacing(5);
+        column![header, list].spacing(10).into()
+    };
+
+    // 2. Dynamic Duration Filter Section
+    let mut dur_set = std::collections::HashSet::new();
+    // Scan ALL tasks
+    for tasks in app.store.calendars.values() {
+        for t in tasks {
+            if let Some(d) = t.estimated_duration {
+                dur_set.insert(d);
+            }
+        }
+    }
+    let mut sorted_durs: Vec<u32> = dur_set.into_iter().collect();
+    sorted_durs.sort();
+
+    // Build Options
+    let mut opts = vec![DurationOpt(None, "Any".to_string())];
+    for d in sorted_durs {
+        opts.push(DurationOpt(Some(d), format_mins(d)));
     }
 
-    let list = column(
-        all_cats
-            .into_iter()
-            .map(|cat| {
-                let is_selected = app.selected_categories.contains(&cat);
-                let cat_clone = cat.clone();
+    // Determine Current Selection (Robust matching)
+    let current_min = opts
+        .iter()
+        .find(|o| o.0 == app.filter_min_duration)
+        .cloned()
+        .unwrap_or_else(|| opts[0].clone());
 
-                // CHANGED: Display Name logic
-                let display_name = if cat == UNCATEGORIZED_ID {
-                    "Uncategorized".to_string() // No hashtag for this one
-                } else {
-                    format!("#{}", cat)
-                };
+    let current_max = opts
+        .iter()
+        .find(|o| o.0 == app.filter_max_duration)
+        .cloned()
+        .unwrap_or_else(|| opts[0].clone());
 
-                checkbox(display_name, is_selected)
-                    .size(18)
-                    .text_size(16)
-                    .on_toggle(move |_| Message::CategoryToggled(cat_clone.clone()))
-                    .into()
+    let dur_filters = column![
+        Rule::horizontal(1),
+        text("Filter Duration")
+            .size(14)
+            .color(Color::from_rgb(0.7, 0.7, 0.7)),
+        row![
+            text("Min:").size(12).width(30),
+            iced::widget::pick_list(opts.clone(), Some(current_min), |o| {
+                Message::SetMinDuration(o.0)
             })
-            .collect::<Vec<_>>(),
-    )
-    .spacing(5);
+            .text_size(12)
+            .padding(5)
+            .width(Length::Fill)
+        ]
+        .spacing(5)
+        .align_y(iced::Alignment::Center),
+        row![
+            text("Max:").size(12).width(30),
+            iced::widget::pick_list(opts, Some(current_max), |o| Message::SetMaxDuration(o.0))
+                .text_size(12)
+                .padding(5)
+                .width(Length::Fill)
+        ]
+        .spacing(5)
+        .align_y(iced::Alignment::Center),
+        checkbox("Include Unset", app.filter_include_unset_duration)
+            .text_size(12)
+            .size(16)
+            .on_toggle(Message::ToggleIncludeUnsetDuration)
+    ]
+    .spacing(8)
+    .padding(iced::Padding {
+        top: 10.0,
+        ..Default::default()
+    });
 
-    column![header, list].spacing(10).into()
+    // Combine Tag List + Duration Filters
+    column![tags_list, dur_filters].spacing(10).into()
 }
 
 // --- MAIN CONTENT COMPONENT ---
@@ -249,15 +342,17 @@ fn view_input_area(app: &GuiApp) -> Element<'_, Message> {
     let input_placeholder = if app.editing_uid.is_some() {
         "Edit Title..."
     } else {
-        "Add task (Buy cat food !1 @weekly #groceries)..."
+        "Add task (Buy cat food !1 @weekly #groceries ~30m)..."
     };
 
+    // 1. Main Text Input
     let input_title = text_input(input_placeholder, &app.input_value)
         .on_input(Message::InputChanged)
         .on_submit(Message::SubmitTask)
         .padding(10)
         .size(20);
 
+    // 3. Layout Construction
     if app.editing_uid.is_some() {
         let input_desc = text_input("Notes...", &app.description_value)
             .on_input(Message::DescriptionChanged)
@@ -289,7 +384,7 @@ fn view_input_area(app: &GuiApp) -> Element<'_, Message> {
         .spacing(5)
         .into()
     } else {
-        column![input_title].into()
+        column![input_title,].spacing(5).into()
     }
 }
 
@@ -356,6 +451,35 @@ fn view_task_row<'a>(app: &'a GuiApp, index: usize, task: &'a TodoTask) -> Eleme
 
     if task.rrule.is_some() {
         tags_row = tags_row.push(text("(R)").size(14).color(Color::from_rgb(0.6, 0.6, 1.0)));
+    }
+
+    if let Some(mins) = task.estimated_duration {
+        let label = if mins >= 525600 {
+            format!("{}y", mins / 525600)
+        } else if mins >= 43200 {
+            format!("{}mo", mins / 43200)
+        } else if mins >= 10080 {
+            format!("{}w", mins / 10080)
+        } else if mins >= 1440 {
+            format!("{}d", mins / 1440)
+        } else if mins >= 60 {
+            format!("{}h", mins / 60)
+        } else {
+            format!("{}m", mins)
+        };
+
+        tags_row = tags_row.push(
+            container(text(label).size(10).color(Color::WHITE))
+                .style(|_| container::Style {
+                    background: Some(Color::from_rgb(0.5, 0.5, 0.5).into()),
+                    border: iced::Border {
+                        radius: 4.0.into(),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                })
+                .padding(3),
+        );
     }
 
     let date_text = match task.due {

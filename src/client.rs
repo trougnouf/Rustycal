@@ -223,8 +223,6 @@ impl RustyClient {
     }
 
     pub async fn toggle_task(&self, task: &mut Task) -> Result<(Task, Option<Task>), String> {
-        // Simple toggle logic: If Completed -> NeedsAction. If Anything Else -> Completed.
-        // We do NOT toggle to Cancelled/InProcess via this helper.
         if task.status == crate::model::TaskStatus::Completed {
             task.status = crate::model::TaskStatus::NeedsAction;
         } else {

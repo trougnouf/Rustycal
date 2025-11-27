@@ -98,6 +98,9 @@ impl GuiApp {
             search_term: &self.search_value,
             hide_completed_global: self.hide_completed,
             cutoff_date,
+            min_duration: self.filter_min_duration,
+            max_duration: self.filter_max_duration,
+            include_unset_duration: self.filter_include_unset_duration,
         });
     }
 
@@ -578,13 +581,9 @@ impl GuiApp {
                     if let Some(cal_tasks) = self.store.calendars.get_mut(&cal_href)
                         && let Some(t) = cal_tasks.iter_mut().find(|t| t.uid == uid)
                     {
-                        // 1. Optimistic Update
                         t.status = new_status;
                         let t_clone = t.clone();
-
                         self.refresh_filtered_tasks();
-
-                        // 2. Sync
                         if let Some(client) = &self.client {
                             return Task::perform(
                                 async_update_wrapper(client.clone(), t_clone),
@@ -593,6 +592,22 @@ impl GuiApp {
                         }
                     }
                 }
+                Task::none()
+            }
+
+            Message::SetMinDuration(val) => {
+                self.filter_min_duration = val;
+                self.refresh_filtered_tasks();
+                Task::none()
+            }
+            Message::SetMaxDuration(val) => {
+                self.filter_max_duration = val;
+                self.refresh_filtered_tasks();
+                Task::none()
+            }
+            Message::ToggleIncludeUnsetDuration(val) => {
+                self.filter_include_unset_duration = val;
+                self.refresh_filtered_tasks();
                 Task::none()
             }
             Message::ToggleDetails(uid) => {

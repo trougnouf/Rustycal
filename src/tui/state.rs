@@ -119,6 +119,10 @@ impl AppState {
             search_term,
             hide_completed_global: self.hide_completed,
             cutoff_date,
+            // TUI currently doesn't implement duration filtering UI, so we disable it
+            min_duration: None,
+            max_duration: None,
+            include_unset_duration: true,
         });
 
         let len = self.tasks.len();
