@@ -87,8 +87,3 @@ file = "packaging/arch/PKGBUILD"
 search = "pkgver=[0-9\\.]+"
 replace = "pkgver={{version}}"
 
-
-[workspace.metadata.release]
-pre-release-commit-message = "chore: Release {{version}}"
-pre-release-hook = ["sh", "-c", "git-cliff --tag {{next_version}} && git add CHANGELOG.md"]
-tag-message = "Release {{version}}"

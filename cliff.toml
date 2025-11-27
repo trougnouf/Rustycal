@@ -1,14 +1,23 @@
 # git-cliff ~ configuration file
 # https://git-cliff.org/docs/configuration
 
+# New release instructions:
+# check `cargo clippy --all-features` and `cargo test`
+# example for TAG=0.2.0
+# git-cliff -t ${TAG} -o CHANGELOG.md && git add . && git commit -m 'chore(release): Update changelog for v"${TAG}"' && git push
+# patch release:
+# cargo release patch --dry-run
+# cargo release patch --execute
+# minor release:
+# cargo release minor --dry-run
+# cargo release minor --execute
+
 [changelog]
-# The header will now be part of the body template.
+# Standard Conventional Commit body.
 header = """
 # Changelog
 
 """
-
-# This template now includes the placeholder for the next release.
 body = """
 {% if version %}\
     ## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
@@ -23,31 +32,14 @@ body = """
             {{ commit.message | upper_first }}\
     {% endfor %}
 {% endfor %}
-
-<!-- git-cliff -->
-{% if previous %}
-    {% for release in previous.releases %}
-        ## [{{ release.version | trim_start_matches(pat="v") }}] - {{ release.timestamp | date(format="%Y-%m-%d") }}
-        {% for group, commits in release.commits | group_by(attribute="group") %}
-            ### {{ group | striptags | trim | upper_first }}
-            {% for commit in commits %}
-                - {% if commit.scope %}*({{ commit.scope }})* {% endif %}\
-                    {% if commit.breaking %}[**breaking**] {% endif %}\
-                    {{ commit.message | upper_first }}\
-            {% endfor %}
-        {% endfor %}
-    {% endfor %}
-{% endif %}
 """
 trim = true
-
-# This is where we define the output file.
-output = "CHANGELOG.md"
 
 [git]
 # Use Conventional Commits for parsing.
 conventional_commits = true
 
+# THIS IS THE KEY CHANGE:
 # Do NOT filter out commits that don't match the spec.
 filter_unconventional = false
 
