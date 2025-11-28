@@ -502,6 +502,7 @@ mod tests {
 
         let res = store.filter(FilterOptions {
             active_cal_href: Some("cal_work"),
+            hidden_calendars: &HashSet::new(),
             selected_categories: &HashSet::new(),
             match_all_categories: false,
             search_term: "",
@@ -515,6 +516,7 @@ mod tests {
 
         let res_global = store.filter(FilterOptions {
             active_cal_href: None,
+            hidden_calendars: &HashSet::new(),
             selected_categories: &HashSet::new(),
             match_all_categories: false,
             search_term: "",
@@ -539,6 +541,7 @@ mod tests {
 
         let res = store.filter(FilterOptions {
             active_cal_href: None,
+            hidden_calendars: &HashSet::new(),
             selected_categories: &selected,
             match_all_categories: false,
             search_term: "",
@@ -564,6 +567,7 @@ mod tests {
 
         let res = store.filter(FilterOptions {
             active_cal_href: None,
+            hidden_calendars: &HashSet::new(),
             selected_categories: &selected,
             match_all_categories: true,
             search_term: "",
@@ -586,6 +590,7 @@ mod tests {
 
         let res_hidden = store.filter(FilterOptions {
             active_cal_href: None,
+            hidden_calendars: &HashSet::new(),
             selected_categories: &HashSet::new(),
             match_all_categories: false,
             search_term: "",
@@ -627,6 +632,7 @@ mod tests {
         let base_options = FilterOptions {
             search_term: "", // Add this
             active_cal_href: None,
+            hidden_calendars: &HashSet::new(),
             selected_categories: &HashSet::new(),
             match_all_categories: false,
             hide_completed_global: false,

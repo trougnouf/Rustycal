@@ -1,3 +1,4 @@
+use crate::gui::icon;
 use crate::gui::message::Message;
 use crate::gui::state::{AppState, GuiApp, SidebarMode};
 use crate::model::Task as TodoTask;
@@ -326,9 +327,9 @@ fn view_main_content(app: &GuiApp) -> Element<'_, Message> {
     }
 
     header_icons = header_icons.push(
-        button(text("F5").size(16)) // Refresh Icon
+        button(icon::icon(icon::REFRESH).size(20)) // Refresh Icon (slightly larger)
             .style(button::secondary)
-            .padding(5)
+            .padding(6)
             .on_press(Message::Refresh),
     );
 
@@ -411,7 +412,7 @@ fn view_main_content(app: &GuiApp) -> Element<'_, Message> {
             .map(|(real_index, task)| view_task_row(app, real_index, task))
             .collect::<Vec<_>>(),
     )
-    .spacing(2);
+    .spacing(1);
 
     main_col = main_col.push(scrollable(tasks_view).height(Length::Fill));
 
@@ -529,20 +530,15 @@ fn view_task_row<'a>(app: &'a GuiApp, index: usize, task: &'a TodoTask) -> Eleme
     };
 
     let show_indent = app.active_cal_href.is_some() && app.search_value.is_empty();
-    let indent_size = if show_indent { task.depth * 20 } else { 0 };
+    // Further reduce per-depth indent so checkboxes start closer to the left
+    let indent_size = if show_indent { task.depth * 12 } else { 0 };
     let indent = horizontal_space().width(Length::Fixed(indent_size as f32));
 
-    // 2. Title Row (Just Summary)
-    let title_row = row![
-        text(&task.summary)
-            .size(20)
-            .color(color)
-            .width(Length::Fill)
-    ]
-    .spacing(10);
+    // 2. Title Row (Just Summary) - replaced later with direct text in-line to avoid wrapping issues
 
     // 3. Tags / Meta Row (Blocked Badge + Categories + Recurrence)
-    let mut tags_row: iced::widget::Row<'_, Message> = row![].spacing(5);
+    // Slightly tighter tags spacing
+    let mut tags_row: iced::widget::Row<'_, Message> = row![].spacing(3);
 
     // [Blocked] Badge moved here
     if is_blocked {
@@ -576,7 +572,8 @@ fn view_task_row<'a>(app: &'a GuiApp, index: usize, task: &'a TodoTask) -> Eleme
     }
 
     if task.rrule.is_some() {
-        tags_row = tags_row.push(text("(R)").size(14).color(Color::from_rgb(0.6, 0.6, 1.0)));
+        // Show a repeat icon for recurring tasks (nf-fa-repeat)
+        tags_row = tags_row.push(container(icon::icon(icon::REPEAT).size(14)).padding(0));
     }
 
     if let Some(mins) = task.estimated_duration {
@@ -608,11 +605,16 @@ fn view_task_row<'a>(app: &'a GuiApp, index: usize, task: &'a TodoTask) -> Eleme
         );
     }
 
-    let date_text = match task.due {
-        Some(d) => text(d.format("%Y-%m-%d").to_string())
-            .size(14)
-            .color(Color::from_rgb(0.5, 0.5, 0.5)),
-        None => text(""),
+    // Reserve a modest width for the date so the title has more room; reduce wasted gap after date
+    let date_text: Element<'a, Message> = match task.due {
+        Some(d) => container(
+            text(d.format("%Y-%m-%d").to_string())
+                .size(14)
+                .color(Color::from_rgb(0.5, 0.5, 0.5)),
+        )
+        .width(Length::Fixed(80.0))
+        .into(),
+        None => horizontal_space().width(Length::Fixed(80.0)).into(),
     };
 
     // 4. Info Button
@@ -620,92 +622,98 @@ fn view_task_row<'a>(app: &'a GuiApp, index: usize, task: &'a TodoTask) -> Eleme
     let has_deps = !task.dependencies.is_empty();
     let is_expanded = app.expanded_tasks.contains(&task.uid);
 
-    let info_btn = if has_desc || has_deps {
-        button(text("i").size(12))
+    // Reserve a fixed slot for the info button so the date doesn't shift when details toggle.
+    // We'll insert either a real button (when content exists) or a transparent placeholder of the same width.
+
+    // 5. Actions
+    // Start empty; we'll push an info button only when there's something to show.
+    // Slightly tighter spacing between action buttons
+    let mut actions = row![].spacing(3);
+
+    // Info button slot: real button when content exists, placeholder otherwise
+    if has_desc || has_deps {
+            let info_btn = button(icon::icon(icon::INFO).size(12))
             .style(if is_expanded {
                 button::primary
             } else {
                 button::secondary
             })
-            .padding(5)
+            .padding(4)
             .width(Length::Fixed(25.0))
-            .on_press(Message::ToggleDetails(task.uid.clone()))
+            .on_press(Message::ToggleDetails(task.uid.clone()));
+        actions = actions.push(info_btn);
     } else {
-        button(text("").size(12))
-            .style(button::text)
-            .padding(5)
-            .width(Length::Fixed(25.0))
-    };
-
-    // 5. Actions
-    let mut actions = row![info_btn].spacing(5);
+        // Invisible placeholder to hold layout space (same width as info button)
+        actions = actions.push(horizontal_space().width(Length::Fixed(25.0)));
+    }
 
     if let Some(yanked) = &app.yanked_uid {
         if *yanked != task.uid {
             actions = actions.push(
                 button(text("Block").size(14))
                     .style(button::secondary)
-                    .padding(5)
+                    .padding(4)
                     .on_press(Message::AddDependency(task.uid.clone())),
             );
             actions = actions.push(
                 button(text("Child").size(14))
                     .style(button::secondary)
-                    .padding(5)
+                    .padding(4)
                     .on_press(Message::MakeChild(task.uid.clone())),
             );
         } else {
             actions = actions.push(
-                button(text("Unlink").size(14))
+                button(icon::icon(icon::UNLINK).size(14))
                     .style(button::primary)
-                    .padding(5)
+                    .padding(4)
                     .on_press(Message::ClearYank),
             );
         }
     } else {
         actions = actions.push(
-            button(text("Link").size(14))
+            button(icon::icon(icon::LINK).size(14))
                 .style(button::secondary)
-                .padding(5)
-                .on_press(Message::YankTask(task.uid.clone())),
+                    .padding(4)
+                    .on_press(Message::YankTask(task.uid.clone())),
         );
     }
 
     let btn_style = button::secondary;
 
-    // Status Controls
+    // Status Controls (action button on the right)
     if task.status != crate::model::TaskStatus::Completed
         && task.status != crate::model::TaskStatus::Cancelled
     {
-        let (icon, msg_status) = if task.status == crate::model::TaskStatus::InProcess {
-            ("||", crate::model::TaskStatus::NeedsAction)
+        // Use a codicon play (eb2c) for the action when starting, and PAUSE when stopping.
+        let (action_icon, msg_status) = if task.status == crate::model::TaskStatus::InProcess {
+            (icon::PAUSE, crate::model::TaskStatus::NeedsAction)
         } else {
-            (">", crate::model::TaskStatus::InProcess)
+            (icon::PLAY, crate::model::TaskStatus::InProcess)
         };
-        actions = actions.push(
-            button(text(icon).size(14))
-                .style(btn_style)
-                .padding(5)
-                .on_press(Message::SetTaskStatus(index, msg_status)),
-        );
+    actions = actions.push(
+    button(icon::icon(action_icon).size(14))
+    .style(btn_style)
+    .padding(4)
+    .on_press(Message::SetTaskStatus(index, msg_status)),
+    );
     }
 
     actions = actions.push(
-        button(text("+").size(14))
+        button(icon::icon(icon::PLUS).size(14))
             .style(btn_style)
-            .padding(5)
+            .padding(4)
             .on_press(Message::ChangePriority(index, 1)),
     );
     actions = actions.push(
-        button(text("-").size(14))
+        button(icon::icon(icon::MINUS).size(14))
             .style(btn_style)
-            .padding(5)
+            .padding(4)
             .on_press(Message::ChangePriority(index, -1)),
     );
     actions = actions.push(
-        button(text("Edit").size(14))
+        button(icon::icon(icon::EDIT).size(14))
             .style(btn_style)
-            .padding(5)
+            .padding(4)
             .on_press(Message::EditTaskStart(index)),
     );
 
@@ -713,21 +721,21 @@ fn view_task_row<'a>(app: &'a GuiApp, index: usize, task: &'a TodoTask) -> Eleme
     if task.status != crate::model::TaskStatus::Completed
         && task.status != crate::model::TaskStatus::Cancelled
     {
-        actions = actions.push(
-            button(text("ø").size(14))
-                .style(button::danger)
-                .padding(5)
-                .on_press(Message::SetTaskStatus(
-                    index,
-                    crate::model::TaskStatus::Cancelled,
-                )),
-        );
+    actions = actions.push(
+        button(icon::icon(icon::CROSS).size(14))
+        .style(button::danger)
+        .padding(4)
+        .on_press(Message::SetTaskStatus(
+            index,
+            crate::model::TaskStatus::Cancelled,
+        )),
+    );
     }
 
     actions = actions.push(
-        button(text("Del").size(14))
+        button(icon::icon(icon::TRASH).size(14))
             .style(button::danger)
-            .padding(5)
+            .padding(4)
             .on_press(Message::DeleteTask(index)),
     );
 
@@ -738,34 +746,40 @@ fn view_task_row<'a>(app: &'a GuiApp, index: usize, task: &'a TodoTask) -> Eleme
     // --- CUSTOM MULTI-STATE CHECKBOX ---
     // We define the look (Icon + Background Color) based on status
     let (icon_char, bg_color, border_color) = match task.status {
+        // Show a play icon for ongoing tasks per user's preference (nf-cod-play)
         crate::model::TaskStatus::InProcess => (
-            ">",
+            // Use the FontAwesome play inside the status box (prettier in-box glyph)
+            icon::PLAY_FA,
             // Toned down / Muted Green
             Color::from_rgb(0.6, 0.8, 0.6),
             Color::from_rgb(0.4, 0.5, 0.4),
         ),
         crate::model::TaskStatus::Cancelled => (
-            "X",
+            icon::CROSS,
             Color::from_rgb(0.3, 0.2, 0.2),
             Color::from_rgb(0.5, 0.4, 0.4),
         ),
         crate::model::TaskStatus::Completed => (
-            "V",
+            icon::CHECK,
             // The "Pretty" Bright Green
             Color::from_rgb(0.0, 0.6, 0.0),
             Color::from_rgb(0.0, 0.8, 0.0),
         ),
+        // NeedsAction: render an empty interior (no glyph) so we avoid a box-within-box
         crate::model::TaskStatus::NeedsAction => {
-            (" ", Color::TRANSPARENT, Color::from_rgb(0.5, 0.5, 0.5))
+            (' ', Color::TRANSPARENT, Color::from_rgb(0.5, 0.5, 0.5))
         }
     };
 
     // We use a Button fixed to 24x24 to act as a Checkbox
     let status_btn = button(
         container(
-            text(icon_char)
-                .size(12) // Reduced size (was 14)
-                .color(Color::WHITE),
+            // If icon_char is a space sentinel, render an empty Text so the colored box appears clean
+            if icon_char != ' ' {
+                icon::icon(icon_char).size(12).color(Color::WHITE)
+            } else {
+                text("").size(12).color(Color::WHITE)
+            },
         )
         .width(Length::Fill)
         .height(Length::Fill)
@@ -802,31 +816,39 @@ fn view_task_row<'a>(app: &'a GuiApp, index: usize, task: &'a TodoTask) -> Eleme
             _ => base_active,
         }
     });
-    let row_main = row![
-        indent,
-        status_btn,
-        column![
-            title_row,
-            // Show tags line if there are tags OR recurrence OR task is blocked
-            if !task.categories.is_empty() || task.rrule.is_some() || is_blocked {
-                tags_element
-            } else {
-                row![].into()
-            }
-        ]
-        .width(Length::Fill)
-        .spacing(2),
-        date_text,
-        actions
+    // Build the title row (Fill) and a main text column (title + tags)
+    let title_row = row![
+        text(&task.summary)
+            .size(20)
+            .color(color)
+            .width(Length::Fill)
     ]
-    .spacing(15)
-    .align_y(iced::Alignment::Center);
+    .spacing(6);
 
+    let main_text_col = column![
+        title_row,
+        // Show tags line if there are tags OR recurrence OR task is blocked
+        if !task.categories.is_empty() || task.rrule.is_some() || is_blocked {
+            tags_element
+        } else {
+            row![].into()
+        }
+    ]
+    .width(Length::Fill)
+    .spacing(1);
+
+    // Place date_text as its own column element so it doesn't shift when actions change.
+    // Tighten spacing so elements use space more efficiently
+    let row_main = row![indent, status_btn, main_text_col, date_text, actions]
+        .spacing(10)
+        .align_y(iced::Alignment::Center);
+
+    // Reduce padding so the row is more compact; nudge right edge 1px left to avoid scrollbar overlap
     let padded_row = container(row_main).padding(iced::Padding {
-        top: 5.0,
-        right: 15.0,
-        bottom: 5.0,
-        left: 5.0,
+        top: 4.0,
+        right: 12.0,
+        bottom: 4.0,
+        left: 0.0,
     });
 
     if is_expanded {
@@ -852,7 +874,7 @@ fn view_task_row<'a>(app: &'a GuiApp, index: usize, task: &'a TodoTask) -> Eleme
                     .size(12)
                     .color(Color::from_rgb(0.4, 0.8, 0.4)),
                 text(p_name).size(12), // Pass ownership (remove &)
-                button(text("x").size(10))
+                button(icon::icon(icon::CROSS).size(10))
                     .style(button::danger)
                     .padding(2)
                     .on_press(Message::RemoveParent(task.uid.clone()))
@@ -881,7 +903,7 @@ fn view_task_row<'a>(app: &'a GuiApp, index: usize, task: &'a TodoTask) -> Eleme
                     text(format!("{} {}", check, name))
                         .size(12)
                         .color(Color::from_rgb(0.6, 0.6, 0.6)),
-                    button(text("x").size(10))
+                    button(icon::icon(icon::CROSS).size(10))
                         .style(button::danger)
                         .padding(2)
                         .on_press(Message::RemoveDependency(task.uid.clone(), dep_uid.clone()))
@@ -897,20 +919,19 @@ fn view_task_row<'a>(app: &'a GuiApp, index: usize, task: &'a TodoTask) -> Eleme
         if app.calendars.len() > 1 {
             let current_cal_href = task.calendar_href.clone();
 
-            // Build a list of target calendars (excluding the current one)
+            // Build a list of target calendars (excluding the current one and hidden calendars)
             let targets: Vec<_> = app
                 .calendars
                 .iter()
-                .filter(|c| c.href != current_cal_href)
+                .filter(|c| c.href != current_cal_href && !app.hidden_calendars.contains(&c.href))
                 .collect();
 
             let move_label = text("Move to:")
                 .size(12)
                 .color(Color::from_rgb(0.5, 0.5, 0.5));
 
-            // We use a Row of buttons for targets (simpler than PickList for per-row state)
-            // Or a PickList if you prefer. A row of small buttons is often faster.
-            let mut move_row = row![move_label].spacing(5).align_y(iced::Alignment::Center);
+            // We use a Row of buttons for targets, but make it horizontally scrollable and constrained in height
+            let mut move_row = row![].spacing(5).align_y(iced::Alignment::Center);
 
             for cal in targets {
                 move_row = move_row.push(
@@ -921,7 +942,11 @@ fn view_task_row<'a>(app: &'a GuiApp, index: usize, task: &'a TodoTask) -> Eleme
                 );
             }
 
-            details_col = details_col.push(move_row);
+            details_col = details_col.push(
+                row![move_label, scrollable(move_row).height(Length::Fixed(30.0))]
+                    .spacing(10)
+                    .align_y(iced::Alignment::Center),
+            );
         }
 
         let desc_row = row![
@@ -1023,7 +1048,7 @@ fn view_settings(app: &GuiApp) -> Element<'_, Message> {
                 text(format!("#{}", key)).width(Length::FillPortion(1)),
                 text("->").width(Length::Fixed(20.0)),
                 text(val_str).width(Length::FillPortion(2)),
-                button(text("X").size(12))
+                button(icon::icon(icon::CROSS).size(12))
                     .style(button::danger)
                     .padding(5)
                     .on_press(Message::RemoveAlias(key.clone()))

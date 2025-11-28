@@ -1,6 +1,7 @@
 pub mod message;
 pub mod state;
 pub mod view;
+pub mod icon; // Register the new module
 
 use crate::cache::Cache;
 use crate::client::RustyClient;
@@ -13,7 +14,7 @@ use crate::storage::{LOCAL_CALENDAR_HREF, LOCAL_CALENDAR_NAME};
 use crate::journal::Journal;
 
 use chrono::{Duration, Utc};
-use iced::{Element, Task, Theme, window};
+use iced::{Element, Task, Theme, window, font}; // Added font
 use message::Message;
 use state::{AppState, GuiApp, SidebarMode};
 use std::sync::OnceLock;
@@ -49,10 +50,15 @@ impl GuiApp {
     fn new() -> (Self, Task<Message>) {
         (
             Self::default(),
-            Task::perform(
-                async { Config::load().map_err(|e| e.to_string()) },
-                Message::ConfigLoaded,
-            ),
+            Task::batch(vec![
+                // Load config
+                Task::perform(
+                    async { Config::load().map_err(|e| e.to_string()) },
+                    Message::ConfigLoaded,
+                ),
+                // Load Font Bytes
+                font::load(icon::FONT_BYTES).map(|_| Message::FontLoaded(Ok(())))
+            ]),
         )
     }
 
@@ -113,6 +119,7 @@ impl GuiApp {
 
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::FontLoaded(_) => Task::none(), // Just consume the event
             Message::ConfigLoaded(Ok(config)) => {
                 self.hidden_calendars = config.hidden_calendars.clone().into_iter().collect();
                 self.sort_cutoff_months = config.sort_cutoff_months;

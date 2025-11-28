@@ -172,11 +172,7 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
         })
         .collect();
 
-    let main_style = if state.active_focus == Focus::Main {
-        Style::default().fg(Color::Yellow)
-    } else {
-        Style::default()
-    };
+    // (main_style is defined later with more context; skip this earlier unused declaration)
 
     // Main Title to show Offline/Unsynced status
     let mut title = if state.loading {
