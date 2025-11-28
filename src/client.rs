@@ -153,21 +153,19 @@ impl RustyClient {
 
         // 3. Determine Active
         let mut active_href = None;
-        if let Some(def_cal) = &config.default_calendar {
-            if let Some(found) = calendars
+        if let Some(def_cal) = &config.default_calendar
+            && let Some(found) = calendars
                 .iter()
                 .find(|c| c.name == *def_cal || c.href == *def_cal)
             {
                 active_href = Some(found.href.clone());
             }
-        }
 
         // Only try discovery if we are online and explicit default failed
-        if active_href.is_none() && warning.is_none() {
-            if let Ok(href) = client.discover_calendar().await {
+        if active_href.is_none() && warning.is_none()
+            && let Ok(href) = client.discover_calendar().await {
                 active_href = Some(href);
             }
-        }
 
         // 4. Fetch Tasks (only if online)
         // If offline, we return empty list here. The UI (GUI/TUI) is responsible
@@ -261,8 +259,7 @@ impl RustyClient {
             for item in fetched {
                 if let Ok(content) = item.content
                     && !content.data.is_empty()
-                {
-                    if let Ok(task) = Task::from_ics(
+                    && let Ok(task) = Task::from_ics(
                         &content.data,
                         content.etag,
                         item.href,
@@ -270,7 +267,6 @@ impl RustyClient {
                     ) {
                         tasks.push(task);
                     }
-                }
             }
             Ok(tasks)
         } else {

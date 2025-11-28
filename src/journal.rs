@@ -32,13 +32,10 @@ impl Journal {
     pub fn load() -> Self {
         if let Some(path) = Self::get_path()
             && path.exists()
-        {
-            if let Ok(content) = fs::read_to_string(path) {
-                if let Ok(journal) = serde_json::from_str(&content) {
+            && let Ok(content) = fs::read_to_string(path)
+                && let Ok(journal) = serde_json::from_str(&content) {
                     return journal;
                 }
-            }
-        }
         Self::default()
     }
 

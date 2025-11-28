@@ -35,11 +35,10 @@ impl LocalStorage {
             && path.exists()
         {
             // If the file exists but is empty/corrupt, ignore error and return empty vec
-            if let Ok(json) = fs::read_to_string(path) {
-                if let Ok(tasks) = serde_json::from_str::<Vec<Task>>(&json) {
+            if let Ok(json) = fs::read_to_string(path)
+                && let Ok(tasks) = serde_json::from_str::<Vec<Task>>(&json) {
                     return Ok(tasks);
                 }
-            }
         }
         Ok(vec![])
     }

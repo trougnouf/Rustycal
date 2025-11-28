@@ -175,11 +175,10 @@ pub async fn run() -> Result<()> {
         // 1. Load Disk Cache for Network Cals (Performance)
         let mut cached_results = Vec::new();
         for cal in &calendars {
-            if cal.href != LOCAL_CALENDAR_HREF {
-                if let Ok(tasks) = Cache::load(&cal.href) {
+            if cal.href != LOCAL_CALENDAR_HREF
+                && let Ok(tasks) = Cache::load(&cal.href) {
                     cached_results.push((cal.href.clone(), tasks));
                 }
-            }
         }
         if !cached_results.is_empty() {
             let _ = event_tx.send(AppEvent::TasksLoaded(cached_results)).await;
@@ -475,15 +474,14 @@ pub async fn run() -> Result<()> {
                     app_state.calendars = cals;
 
                     // Respect server's default first, otherwise fall back to Local
-                    if let Some(def) = &default_cal {
-                        if let Some(found) = app_state
+                    if let Some(def) = &default_cal
+                        && let Some(found) = app_state
                             .calendars
                             .iter()
                             .find(|c| c.name == *def || c.href == *def)
                         {
                             app_state.active_cal_href = Some(found.href.clone());
                         }
-                    }
 
                     // If still nothing (or default was invalid), select Local
                     if app_state.active_cal_href.is_none() {
@@ -643,9 +641,9 @@ pub async fn run() -> Result<()> {
                         KeyCode::Down | KeyCode::Char('j') => app_state.next_move_target(),
                         KeyCode::Up | KeyCode::Char('k') => app_state.previous_move_target(),
                         KeyCode::Enter => {
-                            if let Some(task) = app_state.get_selected_task().cloned() {
-                                if let Some(idx) = app_state.move_selection_state.selected() {
-                                    if let Some(target_cal) = app_state.move_targets.get(idx) {
+                            if let Some(task) = app_state.get_selected_task().cloned()
+                                && let Some(idx) = app_state.move_selection_state.selected()
+                                    && let Some(target_cal) = app_state.move_targets.get(idx) {
                                         let target_href = target_cal.href.clone();
 
                                         // Optimistic Update
@@ -674,8 +672,6 @@ pub async fn run() -> Result<()> {
                                                 .map_or("", |t| &t.summary)
                                         );
                                     }
-                                }
-                            }
                             app_state.mode = InputMode::Normal;
                         }
                         _ => {}
@@ -689,8 +685,8 @@ pub async fn run() -> Result<()> {
                         KeyCode::Down | KeyCode::Char('j') => app_state.next_export_target(),
                         KeyCode::Up | KeyCode::Char('k') => app_state.previous_export_target(),
                         KeyCode::Enter => {
-                            if let Some(idx) = app_state.export_selection_state.selected() {
-                                if let Some(target) = app_state.export_targets.get(idx) {
+                            if let Some(idx) = app_state.export_selection_state.selected()
+                                && let Some(target) = app_state.export_targets.get(idx) {
                                     // Send Action
                                     let _ = action_tx
                                         .send(Action::MigrateLocal(target.href.clone()))
@@ -698,7 +694,6 @@ pub async fn run() -> Result<()> {
                                     // Optimistic: Clear local view immediately? Maybe safer to wait for confirm.
                                     app_state.mode = InputMode::Normal;
                                 }
-                            }
                         }
                         _ => {}
                     },

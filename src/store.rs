@@ -93,11 +93,10 @@ impl TaskStore {
 
         if let Some(href) = options.active_cal_href {
             // If explicit calendar selected, ignore hidden list (unless it matches)
-            if !options.hidden_calendars.contains(href) {
-                if let Some(tasks) = self.calendars.get(href) {
+            if !options.hidden_calendars.contains(href)
+                && let Some(tasks) = self.calendars.get(href) {
                     raw_tasks.extend(tasks.clone());
                 }
-            }
         } else {
             // "All Tasks" view: Skip hidden calendars
             for (href, tasks) in &self.calendars {
