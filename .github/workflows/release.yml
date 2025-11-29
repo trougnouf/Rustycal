@@ -64,17 +64,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Download the latest git-cliff release asset for Linux
+          # Download
           gh release download --repo orhun/git-cliff --pattern '*x86_64-unknown-linux-gnu.tar.gz'
-
-          # Extract the archive
+          
+          # Extract
           tar -xf git-cliff-*.tar.gz
-
-          # Move the binary to the current directory and make it executable
-          mv git-cliff-*/git-cliff .
+          
+          # Use find to locate the binary and move it to current dir
+          # This avoids errors if the folder name changes or glob expansion is ambiguous
+          find . -name "git-cliff" -type f -exec mv {} . \;
+          
           chmod +x ./git-cliff
-
-          # Run git-cliff to generate the changelog
+          
+          # Run
           ./git-cliff --config cliff.toml --verbose --latest --strip header --output CHANGELOG_RELEASE.md
 
       # 8. Publish to GitHub Releases

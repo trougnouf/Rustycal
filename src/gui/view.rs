@@ -462,41 +462,41 @@ fn view_input_area(app: &GuiApp) -> Element<'_, Message> {
         .spacing(10);
 
         // 2. Move Section (Conditional, Filtered, Scrollable)
-    let mut move_element: Element<'_, Message> = row![].into();
+        let mut move_element: Element<'_, Message> = row![].into();
 
-        if let Some(edit_uid) = &app.editing_uid && let Some(task) = app.tasks.iter().find(|t| t.uid == *edit_uid) {
-                // Filter: Exclude current calendar AND hidden calendars
-                let targets: Vec<_> = app
-                    .calendars
-                    .iter()
-                    .filter(|c| {
-                        c.href != task.calendar_href && !app.hidden_calendars.contains(&c.href)
-                    })
-                    .collect();
+        if let Some(edit_uid) = &app.editing_uid
+            && let Some(task) = app.tasks.iter().find(|t| t.uid == *edit_uid)
+        {
+            // Filter: Exclude current calendar AND hidden calendars
+            let targets: Vec<_> = app
+                .calendars
+                .iter()
+                .filter(|c| c.href != task.calendar_href && !app.hidden_calendars.contains(&c.href))
+                .collect();
 
-                if !targets.is_empty() {
-                    let label = text("Move to:")
-                        .size(12)
-                        .color(Color::from_rgb(0.6, 0.6, 0.6));
+            if !targets.is_empty() {
+                let label = text("Move to:")
+                    .size(12)
+                    .color(Color::from_rgb(0.6, 0.6, 0.6));
 
-                    let mut btn_row = row![].spacing(5);
-                    for cal in targets {
-                        btn_row = btn_row.push(
-                            button(text(&cal.name).size(12))
-                                .style(button::secondary)
-                                .padding(5)
-                                .on_press(Message::MoveTask(task.uid.clone(), cal.href.clone())),
-                        );
-                    }
-
-                    move_element = row![
-                        label,
-                        scrollable(btn_row).height(30) // Constrain height to prevent layout jumps
-                    ]
-                    .spacing(10)
-                    .align_y(iced::Alignment::Center)
-                    .into();
+                let mut btn_row = row![].spacing(5);
+                for cal in targets {
+                    btn_row = btn_row.push(
+                        button(text(&cal.name).size(12))
+                            .style(button::secondary)
+                            .padding(5)
+                            .on_press(Message::MoveTask(task.uid.clone(), cal.href.clone())),
+                    );
                 }
+
+                move_element = row![
+                    label,
+                    scrollable(btn_row).height(30) // Constrain height to prevent layout jumps
+                ]
+                .spacing(10)
+                .align_y(iced::Alignment::Center)
+                .into();
+            }
         }
 
         // 3. Assemble Layout
@@ -633,7 +633,7 @@ fn view_task_row<'a>(app: &'a GuiApp, index: usize, task: &'a TodoTask) -> Eleme
 
     // Info button slot: real button when content exists, placeholder otherwise
     if has_desc || has_deps {
-            let info_btn = button(icon::icon(icon::INFO).size(12))
+        let info_btn = button(icon::icon(icon::INFO).size(12))
             .style(if is_expanded {
                 button::primary
             } else {
@@ -674,8 +674,8 @@ fn view_task_row<'a>(app: &'a GuiApp, index: usize, task: &'a TodoTask) -> Eleme
         actions = actions.push(
             button(icon::icon(icon::LINK).size(14))
                 .style(button::secondary)
-                    .padding(4)
-                    .on_press(Message::YankTask(task.uid.clone())),
+                .padding(4)
+                .on_press(Message::YankTask(task.uid.clone())),
         );
     }
 
@@ -691,12 +691,12 @@ fn view_task_row<'a>(app: &'a GuiApp, index: usize, task: &'a TodoTask) -> Eleme
         } else {
             (icon::PLAY, crate::model::TaskStatus::InProcess)
         };
-    actions = actions.push(
-    button(icon::icon(action_icon).size(14))
-    .style(btn_style)
-    .padding(4)
-    .on_press(Message::SetTaskStatus(index, msg_status)),
-    );
+        actions = actions.push(
+            button(icon::icon(action_icon).size(14))
+                .style(btn_style)
+                .padding(4)
+                .on_press(Message::SetTaskStatus(index, msg_status)),
+        );
     }
 
     actions = actions.push(
@@ -722,15 +722,15 @@ fn view_task_row<'a>(app: &'a GuiApp, index: usize, task: &'a TodoTask) -> Eleme
     if task.status != crate::model::TaskStatus::Completed
         && task.status != crate::model::TaskStatus::Cancelled
     {
-    actions = actions.push(
-        button(icon::icon(icon::CROSS).size(14))
-        .style(button::danger)
-        .padding(4)
-        .on_press(Message::SetTaskStatus(
-            index,
-            crate::model::TaskStatus::Cancelled,
-        )),
-    );
+        actions = actions.push(
+            button(icon::icon(icon::CROSS).size(14))
+                .style(button::danger)
+                .padding(4)
+                .on_press(Message::SetTaskStatus(
+                    index,
+                    crate::model::TaskStatus::Cancelled,
+                )),
+        );
     }
 
     actions = actions.push(
@@ -823,7 +823,11 @@ fn view_task_row<'a>(app: &'a GuiApp, index: usize, task: &'a TodoTask) -> Eleme
     // separate right-aligned row below the title.
     let title_chars = task.summary.chars().count();
     let est_tags_len = task.categories.len() * 4
-        + if task.estimated_duration.is_some() { 3 } else { 0 }
+        + if task.estimated_duration.is_some() {
+            3
+        } else {
+            0
+        }
         + if task.rrule.is_some() { 1 } else { 0 }
         + if is_blocked { 9 } else { 0 };
     // threshold tuned to typical widths; tweak as needed
@@ -843,6 +847,7 @@ fn view_task_row<'a>(app: &'a GuiApp, index: usize, task: &'a TodoTask) -> Eleme
             }
         ]
         .spacing(6)
+        .align_y(iced::Alignment::Center) // <--- ADD THIS LINE
     } else {
         row![
             text(&task.summary)
@@ -851,6 +856,9 @@ fn view_task_row<'a>(app: &'a GuiApp, index: usize, task: &'a TodoTask) -> Eleme
                 .width(Length::Fill)
         ]
         .spacing(6)
+        // .align_y(...) is less critical here as it's just text,
+        // but adding it doesn't hurt:
+        .align_y(iced::Alignment::Center)
     };
 
     let main_text_col = column![
