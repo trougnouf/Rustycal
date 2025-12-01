@@ -1,4 +1,5 @@
 use crate::model::{CalendarListEntry, Task};
+use crate::storage::LocalStorage; // Import helper
 use anyhow::Result;
 use directories::ProjectDirs;
 use std::collections::hash_map::DefaultHasher;
@@ -19,7 +20,7 @@ impl Cache {
         }
         None
     }
-    // Generate a filename based on the Calendar URL (or "default")
+
     fn get_path(key: &str) -> Option<PathBuf> {
         if let Some(proj) = ProjectDirs::from("com", "cfait", "cfait") {
             let cache_dir = proj.cache_dir();
@@ -27,7 +28,6 @@ impl Cache {
                 let _ = fs::create_dir_all(cache_dir);
             }
 
-            // Hash the URL to get a safe, unique filename
             let mut hasher = DefaultHasher::new();
             key.hash(&mut hasher);
             let filename = format!("tasks_{:x}.json", hasher.finish());
@@ -40,7 +40,7 @@ impl Cache {
     pub fn save(key: &str, tasks: &[Task]) -> Result<()> {
         if let Some(path) = Self::get_path(key) {
             let json = serde_json::to_string_pretty(tasks)?;
-            fs::write(path, json)?;
+            LocalStorage::atomic_write(path, json)?;
         }
         Ok(())
     }
@@ -59,7 +59,7 @@ impl Cache {
     pub fn save_calendars(cals: &[CalendarListEntry]) -> Result<()> {
         if let Some(path) = Self::get_calendars_path() {
             let json = serde_json::to_string_pretty(cals)?;
-            fs::write(path, json)?;
+            LocalStorage::atomic_write(path, json)?;
         }
         Ok(())
     }

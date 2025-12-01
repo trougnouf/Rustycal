@@ -1,4 +1,5 @@
 use crate::model::Task;
+use crate::storage::LocalStorage; // Import helper
 use anyhow::Result;
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
@@ -10,6 +11,8 @@ pub enum Action {
     Create(Task),
     Update(Task),
     Delete(Task),
+    // Add Move action for atomic moves on server
+    Move(Task, String), // Task, New Calendar Href
 }
 
 #[derive(Serialize, Deserialize, Debug, Default)]
@@ -18,7 +21,7 @@ pub struct Journal {
 }
 
 impl Journal {
-    fn get_path() -> Option<PathBuf> {
+    pub fn get_path() -> Option<PathBuf> {
         if let Some(proj) = ProjectDirs::from("com", "cfait", "cfait") {
             let data_dir = proj.data_dir();
             if !data_dir.exists() {
@@ -43,7 +46,7 @@ impl Journal {
     pub fn save(&self) -> Result<()> {
         if let Some(path) = Self::get_path() {
             let json = serde_json::to_string_pretty(self)?;
-            fs::write(path, json)?;
+            LocalStorage::atomic_write(path, json)?;
         }
         Ok(())
     }
@@ -52,10 +55,6 @@ impl Journal {
         let mut journal = Self::load();
         journal.queue.push(action);
         journal.save()
-    }
-
-    pub fn peek_front(&self) -> Option<&Action> {
-        self.queue.first()
     }
 
     pub fn pop_front(&mut self) -> Result<()> {
@@ -68,5 +67,11 @@ impl Journal {
 
     pub fn is_empty(&self) -> bool {
         self.queue.is_empty()
+    }
+
+    // Insert at front (used for conflict resolution retries)
+    pub fn push_front(&mut self, action: Action) -> Result<()> {
+        self.queue.insert(0, action);
+        self.save()
     }
 }

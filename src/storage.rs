@@ -2,7 +2,7 @@ use crate::model::Task;
 use anyhow::Result;
 use directories::ProjectDirs;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 // Constants for identification
 pub const LOCAL_CALENDAR_HREF: &str = "local://default";
@@ -22,10 +22,19 @@ impl LocalStorage {
         None
     }
 
+    /// Atomic write: Write to .tmp file then rename
+    pub fn atomic_write<P: AsRef<Path>, C: AsRef<[u8]>>(path: P, contents: C) -> Result<()> {
+        let path = path.as_ref();
+        let tmp_path = path.with_extension("tmp");
+        fs::write(&tmp_path, contents)?;
+        fs::rename(tmp_path, path)?;
+        Ok(())
+    }
+
     pub fn save(tasks: &[Task]) -> Result<()> {
         if let Some(path) = Self::get_path() {
             let json = serde_json::to_string_pretty(tasks)?;
-            fs::write(path, json)?;
+            Self::atomic_write(path, json)?;
         }
         Ok(())
     }
@@ -36,9 +45,10 @@ impl LocalStorage {
         {
             // If the file exists but is empty/corrupt, ignore error and return empty vec
             if let Ok(json) = fs::read_to_string(path)
-                && let Ok(tasks) = serde_json::from_str::<Vec<Task>>(&json) {
-                    return Ok(tasks);
-                }
+                && let Ok(tasks) = serde_json::from_str::<Vec<Task>>(&json)
+            {
+                return Ok(tasks);
+            }
         }
         Ok(vec![])
     }

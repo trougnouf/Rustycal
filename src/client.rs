@@ -3,18 +3,23 @@ use crate::config::Config;
 use crate::journal::{Action, Journal};
 use crate::model::{CalendarListEntry, Task, TaskStatus};
 use crate::storage::{LOCAL_CALENDAR_HREF, LocalStorage};
-use libdav::CalDavClient;
-use libdav::dav::WebDavClient;
+
+// Libdav imports
+use libdav::caldav::{FindCalendarHomeSet, FindCalendars, GetCalendarResources};
+use libdav::dav::{Delete, GetProperty, ListResources, PutResource};
+use libdav::dav::{WebDavClient, WebDavError};
+use libdav::{CalDavClient, names};
 
 use futures::stream::{self, StreamExt};
-use http::Uri;
+use http::{Request, StatusCode, Uri};
 use hyper_rustls::HttpsConnectorBuilder;
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
 use rustls_native_certs;
-use std::collections::{HashMap};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tower_http::auth::AddAuthorization;
+use uuid::Uuid;
 
 type HttpsClient = AddAuthorization<
     Client<
@@ -70,10 +75,12 @@ impl RustyClient {
         };
 
         let http_client = Client::builder(TokioExecutor::new()).build(https_connector);
-        let auth_client = AddAuthorization::basic(http_client, user, pass);
-        let webdav = WebDavClient::new(uri, auth_client);
+        let auth_client = AddAuthorization::basic(http_client.clone(), user, pass);
+        let webdav = WebDavClient::new(uri, auth_client.clone());
+        let caldav = CalDavClient::new(webdav);
+
         Ok(Self {
-            client: Some(CalDavClient::new(webdav)),
+            client: Some(caldav),
         })
     }
 
@@ -81,41 +88,40 @@ impl RustyClient {
         if let Some(client) = &self.client {
             let base_path = client.base_url().path().to_string();
 
-            // 1. Try directly if it looks like a calendar (resource list)
-            if let Ok(resources) = client.list_resources(&base_path).await
-                && resources.iter().any(|r| r.href.ends_with(".ics"))
+            // 1. Try generic WebDAV list to see if base path is already a calendar
+            if let Ok(response) = client.request(ListResources::new(&base_path)).await
+                && response.resources.iter().any(|r| r.href.ends_with(".ics"))
             {
                 return Ok(base_path);
             }
 
-            // 2. Try Principal -> Home Set -> First Calendar
-            if let Ok(Some(principal)) = client.find_current_user_principal().await
-                && let Ok(homes) = client.find_calendar_home_set(&principal).await
-                && let Some(home_url) = homes.first()
-                && let Ok(cals) = client.find_calendars(home_url).await
-                && let Some(first) = cals.first()
-            {
-                return Ok(first.href.clone());
+            // 2. Try CalDAV Discovery
+            if let Ok(Some(principal)) = client.find_current_user_principal().await {
+                if let Ok(response) = client.request(FindCalendarHomeSet::new(&principal)).await
+                    && let Some(home_url) = response.home_sets.first()
+                {
+                    if let Ok(cals_resp) = client.request(FindCalendars::new(home_url)).await
+                        && let Some(first) = cals_resp.calendars.first()
+                    {
+                        return Ok(first.href.clone());
+                    }
+                }
             }
-
-            // Fallback to base
             Ok(base_path)
         } else {
             Err("Offline".to_string())
         }
     }
 
-    // --- SHARED INIT LOGIC (GUI & TUI) ---
-    // This handles: Connection -> Journal Sync -> Calendar Fetch (w/ Cache fallback) -> Task Fetch
     pub async fn connect_with_fallback(
         config: Config,
     ) -> Result<
         (
-            Self,                   // Client
-            Vec<CalendarListEntry>, // Calendars
-            Vec<Task>,              // Tasks (active cal)
-            Option<String>,         // Active Href
-            Option<String>,         // Warning/Error Message
+            Self,
+            Vec<CalendarListEntry>,
+            Vec<Task>,
+            Option<String>,
+            Option<String>,
         ),
         String,
     > {
@@ -126,33 +132,22 @@ impl RustyClient {
             config.allow_insecure_certs,
         )
         .map_err(|e| e.to_string())?;
-
-        // 1. Flush Journal (Attempt)
         let _ = client.sync_journal().await;
-
-        // 2. Fetch Calendars with Fallback
         let (calendars, warning) = match client.get_calendars().await {
             Ok(c) => {
-                // Success: Save to cache
                 let _ = Cache::save_calendars(&c);
                 (c, None)
             }
             Err(e) => {
-                let err_str = e.to_string();
-                // Fatal cert error? Fail hard.
-                if err_str.contains("InvalidCertificate") {
-                    return Err(format!("Connection failed: {}", err_str));
+                if e.contains("InvalidCertificate") {
+                    return Err(format!("Connection failed: {}", e));
                 }
-                // Otherwise (Timeout/DNS/Auth), load from cache
-                let cached = Cache::load_calendars().unwrap_or_default();
                 (
-                    cached,
-                    Some("Offline Mode (Network unreachable)".to_string()),
+                    Cache::load_calendars().unwrap_or_default(),
+                    Some("Offline Mode".to_string()),
                 )
             }
         };
-
-        // 3. Determine Active
         let mut active_href = None;
         if let Some(def_cal) = &config.default_calendar
             && let Some(found) = calendars
@@ -161,18 +156,12 @@ impl RustyClient {
         {
             active_href = Some(found.href.clone());
         }
-
-        // Only try discovery if we are online and explicit default failed
         if active_href.is_none()
             && warning.is_none()
             && let Ok(href) = client.discover_calendar().await
         {
             active_href = Some(href);
         }
-
-        // 4. Fetch Tasks (only if online)
-        // If offline, we return empty list here. The UI (GUI/TUI) is responsible
-        // for calling Cache::load() for the active calendar.
         let tasks = if warning.is_none() {
             if let Some(ref h) = active_href {
                 client.get_tasks(h).await.unwrap_or_default()
@@ -182,38 +171,37 @@ impl RustyClient {
         } else {
             vec![]
         };
-
         Ok((client, calendars, tasks, active_href, warning))
     }
 
-    // --- READ OPERATIONS ---
-
     pub async fn get_calendars(&self) -> Result<Vec<CalendarListEntry>, String> {
-        // If we have a network client, fetch from network
         if let Some(client) = &self.client {
             let principal = client
                 .find_current_user_principal()
                 .await
                 .map_err(|e| format!("{:?}", e))?
                 .ok_or("No principal")?;
-            let homes = client
-                .find_calendar_home_set(&principal)
+
+            let home_set_resp = client
+                .request(FindCalendarHomeSet::new(&principal))
                 .await
                 .map_err(|e| format!("{:?}", e))?;
-            let home_url = homes.first().ok_or("No home set")?;
-            let collections = client
-                .find_calendars(home_url)
+            let home_url = home_set_resp.home_sets.first().ok_or("No home set")?;
+
+            let cals_resp = client
+                .request(FindCalendars::new(home_url))
                 .await
                 .map_err(|e| format!("{:?}", e))?;
 
             let mut calendars = Vec::new();
-            for col in collections {
-                let prop = libdav::PropertyName::new("DAV:", "displayname");
+            for col in cals_resp.calendars {
                 let name = client
-                    .get_property(&col.href, &prop)
+                    .request(GetProperty::new(&col.href, &names::DISPLAY_NAME))
                     .await
-                    .unwrap_or(None)
-                    .unwrap_or(col.href.clone());
+                    .ok()
+                    .and_then(|r| r.value)
+                    .unwrap_or_else(|| col.href.clone());
+
                 calendars.push(CalendarListEntry {
                     name,
                     href: col.href,
@@ -222,136 +210,98 @@ impl RustyClient {
             }
             Ok(calendars)
         } else {
-            // Offline mode: return empty list (Local is injected by UI/Store)
             Ok(vec![])
         }
     }
 
-    // --- REWRITTEN: get_tasks (Delta Sync) ---
     pub async fn get_tasks(&self, calendar_href: &str) -> Result<Vec<Task>, String> {
-        // 1. Routing
         if calendar_href == LOCAL_CALENDAR_HREF {
             return LocalStorage::load().map_err(|e| e.to_string());
         }
-
         if let Some(client) = &self.client {
-            // [SYNC JOURNAL]: Before fetching fresh data, try to push pending changes
-            // so we don't overwrite our own offline edits with old server data.
-            // We ignore errors here (if sync fails, we still want to try to read).
             let _ = self.sync_journal().await;
 
-            // 3. PROPFIND to get list of files and ETags (Lightweight)
-            let resources = client
-                .list_resources(calendar_href)
+            let list_resp = client
+                .request(ListResources::new(calendar_href))
                 .await
-                .map_err(|e| format!("PROPFIND Error: {:?}", e))?;
+                .map_err(|e| format!("PROPFIND: {:?}", e))?;
 
-            // 4. Load Cache
             let cached_tasks = Cache::load(calendar_href).unwrap_or_default();
             let mut cache_map: HashMap<String, Task> = HashMap::new();
             for t in cached_tasks {
                 cache_map.insert(t.href.clone(), t);
             }
 
-            // 5. Calculate Delta
             let mut final_tasks = Vec::new();
             let mut to_fetch = Vec::new();
 
-            // Iterate over server resources
-            for resource in resources {
-                // Filter for actual calendar files
+            for resource in list_resp.resources {
+                // Ignore collection itself or non-ics
                 if !resource.href.ends_with(".ics") {
                     continue;
                 }
 
-                let href = resource.href;
                 let remote_etag = resource.etag;
 
-                // Check if we have it in cache
-                if let Some(local_task) = cache_map.remove(&href) {
-                    // We have it. Does ETag match?
+                if let Some(local_task) = cache_map.remove(&resource.href) {
                     if let Some(r_etag) = &remote_etag
                         && !r_etag.is_empty()
                         && *r_etag == local_task.etag
                     {
-                        // MATCH: Keep local, skip download
                         final_tasks.push(local_task);
                     } else {
-                        // MISMATCH: Needs download
-                        to_fetch.push(href);
+                        to_fetch.push(resource.href);
                     }
                 } else {
-                    // NEW: Needs download
-                    to_fetch.push(href);
+                    to_fetch.push(resource.href);
                 }
             }
-            // Note: Items left in `cache_map` are those that exist locally 
-            // but NOT on the server (deleted). We simply don't add them to `final_tasks`, 
-            // effectively deleting them from the view.
 
-            // 6. Fetch Changed Items (Calendar Multiget)
             if !to_fetch.is_empty() {
-                let fetched = client
-                    .get_calendar_resources(calendar_href, &to_fetch)
+                // Use calendar-multiget
+                let fetched_resp = client
+                    .request(GetCalendarResources::new(calendar_href).with_hrefs(to_fetch))
                     .await
-                    .map_err(|e| format!("MULTIGET Error: {:?}", e))?;
+                    .map_err(|e| format!("MULTIGET: {:?}", e))?;
 
-                for item in fetched {
-                    if let Ok(content) = item.content
-                        && !content.data.is_empty()
-                        && let Ok(task) = Task::from_ics(
+                for item in fetched_resp.resources {
+                    if let Ok(content) = item.content {
+                        if let Ok(task) = Task::from_ics(
                             &content.data,
                             content.etag,
                             item.href,
                             calendar_href.to_string(),
-                        )
-                    {
-                        final_tasks.push(task);
+                        ) {
+                            final_tasks.push(task);
+                        }
                     }
                 }
             }
-
             Ok(final_tasks)
         } else {
-            Err("Offline: Cannot fetch remote calendar".to_string())
+            Err("Offline".to_string())
         }
     }
 
-    // --- REWRITTEN: get_all_tasks (Bounded Concurrency) ---
     pub async fn get_all_tasks(
         &self,
         calendars: &[CalendarListEntry],
     ) -> Result<Vec<(String, Vec<Task>)>, String> {
-        // 1. Clone hrefs to detach lifetimes for async move
         let hrefs: Vec<String> = calendars.iter().map(|c| c.href.clone()).collect();
-
-        // 2. Create a stream of futures
         let futures = hrefs.into_iter().map(|href| {
             let client = self.clone();
-            async move {
-                let tasks = client.get_tasks(&href).await;
-                (href, tasks)
-            }
+            async move { (href.clone(), client.get_tasks(&href).await) }
         });
-
-        // 3. Buffer Unordered (Max 4 concurrent connections)
-        // This prevents "Thundering Herd" on startup
         let mut stream = stream::iter(futures).buffer_unordered(4);
-
-        // 4. Collect Results
         let mut final_results = Vec::new();
         while let Some((href, res)) = stream.next().await {
             if let Ok(tasks) = res {
                 final_results.push((href, tasks));
-            } else if let Err(e) = res {
-                 eprintln!("Failed to sync calendar {}: {}", href, e);
-                 // We don't fail the whole batch, just log it
             }
         }
-
         Ok(final_results)
     }
-    
+
     pub async fn create_task(&self, task: &mut Task) -> Result<(), String> {
         if task.calendar_href == LOCAL_CALENDAR_HREF {
             let mut all = LocalStorage::load().unwrap_or_default();
@@ -359,41 +309,15 @@ impl RustyClient {
             LocalStorage::save(&all).map_err(|e| e.to_string())?;
             return Ok(());
         }
-
-        if let Some(client) = &self.client {
-            let filename = format!("{}.ics", task.uid);
-            let full_href = if task.calendar_href.ends_with('/') {
-                format!("{}{}", task.calendar_href, filename)
-            } else {
-                format!("{}/{}", task.calendar_href, filename)
-            };
-            task.href = full_href.clone();
-            let bytes = task.to_ics().as_bytes().to_vec();
-
-            // Attempt Network Call
-            match client
-                .create_resource(&full_href, bytes, b"text/calendar")
-                .await
-            {
-                Ok(res) => {
-                    if let Some(new_etag) = res {
-                        task.etag = new_etag;
-                    }
-                    Ok(())
-                }
-                Err(e) => {
-                    // Network failed. Queue it.
-                    eprintln!(
-                        "Network error during Create. Queuing offline. Error: {:?}",
-                        e
-                    );
-                    Journal::push(Action::Create(task.clone())).map_err(|je| je.to_string())?;
-                    Ok(()) // Return Ok to UI (Optimistic)
-                }
-            }
+        let filename = format!("{}.ics", task.uid);
+        let full_href = if task.calendar_href.ends_with('/') {
+            format!("{}{}", task.calendar_href, filename)
         } else {
-            Err("Offline".to_string())
-        }
+            format!("{}/{}", task.calendar_href, filename)
+        };
+        task.href = full_href;
+
+        Journal::push(Action::Create(task.clone())).map_err(|e| e.to_string())
     }
 
     pub async fn update_task(&self, task: &mut Task) -> Result<(), String> {
@@ -405,38 +329,7 @@ impl RustyClient {
             }
             return Ok(());
         }
-
-        if let Some(client) = &self.client {
-            let bytes = task.to_ics().as_bytes().to_vec();
-
-            match client
-                .update_resource(
-                    &task.href,
-                    bytes,
-                    &task.etag,
-                    b"text/calendar; charset=utf-8; component=VTODO",
-                )
-                .await
-            {
-                Ok(res) => {
-                    if let Some(new_etag) = res {
-                        task.etag = new_etag;
-                    }
-                    Ok(())
-                }
-                Err(e) => {
-                    // Network failed. Queue it.
-                    eprintln!(
-                        "Network error during Update. Queuing offline. Error: {:?}",
-                        e
-                    );
-                    Journal::push(Action::Update(task.clone())).map_err(|je| je.to_string())?;
-                    Ok(())
-                }
-            }
-        } else {
-            Err("Offline".to_string())
-        }
+        Journal::push(Action::Update(task.clone())).map_err(|e| e.to_string())
     }
 
     pub async fn delete_task(&self, task: &Task) -> Result<(), String> {
@@ -446,23 +339,7 @@ impl RustyClient {
             LocalStorage::save(&all).map_err(|e| e.to_string())?;
             return Ok(());
         }
-
-        if let Some(client) = &self.client {
-            match client.delete(&task.href, &task.etag).await {
-                Ok(_) => Ok(()),
-                Err(e) => {
-                    // Network failed. Queue it.
-                    eprintln!(
-                        "Network error during Delete. Queuing offline. Error: {:?}",
-                        e
-                    );
-                    Journal::push(Action::Delete(task.clone())).map_err(|je| je.to_string())?;
-                    Ok(())
-                }
-            }
-        } else {
-            Err("Offline".to_string())
-        }
+        Journal::push(Action::Delete(task.clone())).map_err(|e| e.to_string())
     }
 
     pub async fn toggle_task(&self, task: &mut Task) -> Result<(Task, Option<Task>), String> {
@@ -471,7 +348,6 @@ impl RustyClient {
         } else {
             task.status = TaskStatus::Completed;
         }
-
         let next_task = if task.status == TaskStatus::Completed {
             task.respawn()
         } else {
@@ -490,27 +366,30 @@ impl RustyClient {
             return Ok((task.clone(), next_task));
         }
 
-        let mut created_task = None;
-        if let Some(mut next) = next_task {
+        if let Some(mut next) = next_task.clone() {
             self.create_task(&mut next).await?;
-            created_task = Some(next);
         }
         self.update_task(task).await?;
-        Ok((task.clone(), created_task))
+        Ok((task.clone(), next_task))
     }
 
     pub async fn move_task(&self, task: &Task, new_calendar_href: &str) -> Result<Task, String> {
-        let mut new_task = task.clone();
-        new_task.calendar_href = new_calendar_href.to_string();
-        new_task.href = String::new();
-        new_task.etag = String::new();
-
-        self.create_task(&mut new_task).await?;
-
-        if let Err(e) = self.delete_task(task).await {
-            eprintln!("Warning: delete failed during move: {}", e);
+        if task.calendar_href == LOCAL_CALENDAR_HREF {
+            let mut new_task = task.clone();
+            new_task.calendar_href = new_calendar_href.to_string();
+            new_task.href = String::new();
+            new_task.etag = String::new();
+            self.create_task(&mut new_task).await?;
+            self.delete_task(task).await?;
+            return Ok(new_task);
         }
-        Ok(new_task)
+
+        Journal::push(Action::Move(task.clone(), new_calendar_href.to_string()))
+            .map_err(|e| e.to_string())?;
+
+        let mut t = task.clone();
+        t.calendar_href = new_calendar_href.to_string();
+        Ok(t)
     }
 
     pub async fn migrate_tasks(
@@ -533,105 +412,131 @@ impl RustyClient {
             return Ok(());
         }
 
-        if let Some(client) = &self.client {
-            while !journal.is_empty() {
-                let action = &mut journal.queue[0];
-                let mut should_pop = false;
-                let mut fatal_error = None;
+        let client = self.client.as_ref().ok_or("Offline")?;
 
-                match action {
-                    Action::Create(task) => {
-                        let filename = format!("{}.ics", task.uid);
-                        let full_href = if task.calendar_href.ends_with('/') {
-                            format!("{}{}", task.calendar_href, filename)
-                        } else {
-                            format!("{}/{}", task.calendar_href, filename)
-                        };
-                        let bytes = task.to_ics().as_bytes().to_vec();
-                        
-                        match client.create_resource(&full_href, bytes, b"text/calendar").await {
-                            Ok(_) => should_pop = true,
-                            Err(e) => {
-                                let err_s = format!("{:?}", e);
-                                if err_s.contains("412") || err_s.contains("PreconditionFailed") {
-                                    should_pop = true; 
-                                } else {
-                                    fatal_error = Some(err_s);
-                                }
-                            }
-                        }
-                    }
-                    Action::Update(task) => {
-                        let bytes = task.to_ics().as_bytes().to_vec();
-                        match client.update_resource(
-                                &task.href,
-                                bytes.clone(),
-                                &task.etag,
-                                b"text/calendar; charset=utf-8; component=VTODO",
-                            ).await 
-                        {
-                            Ok(_) => should_pop = true,
-                            Err(e) => {
-                                let err_s = format!("{:?}", e);
-                                if err_s.contains("412") || err_s.contains("PreconditionFailed") {
-                                    println!("412 Conflict on Update. Fetching fresh ETag...");
-                                    if let Ok(fresh_vec) = client.get_calendar_resources(&task.calendar_href, std::slice::from_ref(&task.href)).await 
-                                       && let Some(fresh_item) = fresh_vec.first() 
-                                    {
-                                        if let Ok(content) = &fresh_item.content {
-                                            println!("Fresh ETag found: {}. Retrying...", content.etag);
-                                            task.etag = content.etag.clone();
-                                            let _ = client.update_resource(
-                                                &task.href,
-                                                bytes, 
-                                                &task.etag, 
-                                                b"text/calendar; charset=utf-8; component=VTODO"
-                                            ).await;
-                                            should_pop = true;
-                                        } else { should_pop = true; }
-                                    } else { should_pop = true; }
-                                } else if err_s.contains("404") {
-                                    should_pop = true;
-                                } else {
-                                    fatal_error = Some(err_s);
-                                }
-                            }
-                        }
-                    }
-                    Action::Delete(task) => {
-                        match client.delete(&task.href, &task.etag).await {
-                            Ok(_) => should_pop = true,
-                            Err(e) => {
-                                let err_s = format!("{:?}", e);
-                                if err_s.contains("404") {
-                                    should_pop = true;
-                                } else if err_s.contains("412") || err_s.contains("PreconditionFailed") {
-                                     if let Ok(fresh_vec) = client.get_calendar_resources(&task.calendar_href, std::slice::from_ref(&task.href)).await 
-                                       && let Some(fresh_item) = fresh_vec.first() 
-                                    {
-                                        if let Ok(content) = &fresh_item.content {
-                                            // Retry Delete with new ETag
-                                            let _ = client.delete(&task.href, &content.etag).await;
-                                        }
-                                        should_pop = true;
-                                    } else { should_pop = true; }
-                                } else {
-                                    fatal_error = Some(err_s);
-                                }
-                            }
-                        }
+        while !journal.is_empty() {
+            let action = journal.queue.remove(0);
+            let mut conflict_resolved_action = None;
+
+            let result = match &action {
+                Action::Create(task) => {
+                    let filename = format!("{}.ics", task.uid);
+                    let full_href = if task.calendar_href.ends_with('/') {
+                        format!("{}{}", task.calendar_href, filename)
+                    } else {
+                        format!("{}/{}", task.calendar_href, filename)
+                    };
+                    // PutResource::new(href).create(data, content_type)
+                    let ics_string = task.to_ics();
+                    match client
+                        .request(PutResource::new(&full_href).create(ics_string, "text/calendar"))
+                        .await
+                    {
+                        Ok(_) => Ok(()),
+                        Err(e) => Err(format!("{:?}", e)),
                     }
                 }
+                Action::Update(task) => {
+                    let ics_string = task.to_ics();
+                    // PutResource::new(href).update(data, content_type, etag)
+                    match client
+                        .request(PutResource::new(&task.href).update(
+                            ics_string,
+                            "text/calendar; charset=utf-8; component=VTODO",
+                            &task.etag,
+                        ))
+                        .await
+                    {
+                        Ok(_) => Ok(()),
+                        Err(WebDavError::BadStatusCode(StatusCode::PRECONDITION_FAILED))
+                        | Err(WebDavError::PreconditionFailed(_)) => {
+                            // 412: CONFLICT detected
+                            println!("Conflict on task {}. Creating copy.", task.uid);
+                            let mut conflict_copy = task.clone();
+                            conflict_copy.uid = Uuid::new_v4().to_string();
+                            conflict_copy.summary = format!("{} (Conflict Copy)", task.summary);
+                            conflict_copy.href = String::new();
+                            conflict_copy.etag = String::new();
+                            conflict_resolved_action = Some(Action::Create(conflict_copy));
+                            Ok(())
+                        }
+                        Err(WebDavError::BadStatusCode(StatusCode::NOT_FOUND)) => {
+                            conflict_resolved_action = Some(Action::Create(task.clone()));
+                            Ok(())
+                        }
+                        Err(e) => Err(format!("{:?}", e)),
+                    }
+                }
+                Action::Delete(task) => {
+                    // Delete::new(href).with_etag(etag)
+                    match client
+                        .request(Delete::new(&task.href).with_etag(&task.etag))
+                        .await
+                    {
+                        Ok(_) => Ok(()),
+                        Err(WebDavError::BadStatusCode(StatusCode::NOT_FOUND)) => Ok(()),
+                        Err(WebDavError::BadStatusCode(StatusCode::PRECONDITION_FAILED)) => {
+                            // Etag mismatch on delete - just force delete or ignore?
+                            // Safe route: Ignore, assume it changed and user can delete again if they see it.
+                            println!("Conflict on delete task {}. Ignoring.", task.uid);
+                            Ok(())
+                        }
+                        Err(e) => Err(format!("{:?}", e)),
+                    }
+                }
+                Action::Move(task, new_cal) => self.execute_move(task, new_cal).await,
+            };
 
-                if should_pop {
-                    let _ = journal.pop_front(); 
-                } else {
-                    eprintln!("Journal Sync Paused: {}", fatal_error.unwrap_or_default());
+            match result {
+                Ok(_) => {
+                    if let Some(act) = conflict_resolved_action {
+                        let _ = journal.push_front(act);
+                    }
+                    journal.save().map_err(|e| e.to_string())?;
+                }
+                Err(e) => {
+                    eprintln!("Sync Error: {}. Stopping sync.", e);
+                    let _ = journal.push_front(action);
+                    journal.save().map_err(|e| e.to_string())?;
                     break;
                 }
             }
         }
         Ok(())
+    }
+
+    async fn execute_move(&self, task: &Task, new_calendar_href: &str) -> Result<(), String> {
+        let client = self.client.as_ref().ok_or("Offline")?;
+
+        let destination = if new_calendar_href.ends_with('/') {
+            format!("{}{}.ics", new_calendar_href, task.uid)
+        } else {
+            format!("{}/{}.ics", new_calendar_href, task.uid)
+        };
+
+        // Construct raw HTTP request for MOVE using the underlying WebDavClient
+        // We access the underlying client via Deref or direct field access depending on libdav implementation.
+        // CalDavClient derefs to WebDavClient.
+
+        let req = Request::builder()
+            .method("MOVE")
+            .uri(&task.href)
+            .header("Destination", &destination)
+            .header("Overwrite", "F")
+            .body(String::new())
+            .map_err(|e| e.to_string())?;
+
+        let (parts, _) = client
+            .webdav_client
+            .request_raw(req)
+            .await
+            .map_err(|e| format!("{:?}", e))?;
+
+        if parts.status.is_success() {
+            Ok(())
+        } else {
+            Err(format!("MOVE failed: {}", parts.status))
+        }
     }
 }
 
