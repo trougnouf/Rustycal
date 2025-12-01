@@ -1,3 +1,4 @@
+// File: ./src/client.rs
 use crate::cache::Cache;
 use crate::config::Config;
 use crate::journal::{Action, Journal};
@@ -8,7 +9,7 @@ use crate::storage::{LOCAL_CALENDAR_HREF, LocalStorage};
 use libdav::caldav::{FindCalendarHomeSet, FindCalendars, GetCalendarResources};
 use libdav::dav::{Delete, GetProperty, ListResources, PutResource};
 use libdav::dav::{WebDavClient, WebDavError};
-use libdav::{CalDavClient, names};
+use libdav::{CalDavClient, PropertyName, names};
 
 use futures::stream::{self, StreamExt};
 use http::{Request, StatusCode, Uri};
@@ -16,10 +17,13 @@ use hyper_rustls::HttpsConnectorBuilder;
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
 use rustls_native_certs;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tower_http::auth::AddAuthorization;
 use uuid::Uuid;
+
+// Define CTag property (CalendarServer extension)
+pub const GET_CTAG: PropertyName = PropertyName::new("http://calendarserver.org/ns/", "getctag");
 
 type HttpsClient = AddAuthorization<
     Client<
@@ -27,6 +31,22 @@ type HttpsClient = AddAuthorization<
         String,
     >,
 >;
+
+/// Helper to ensure we only pass the path component to libdav requests,
+/// as libdav combines it with the base_url.
+fn strip_host(href: &str) -> String {
+    if let Ok(uri) = href.parse::<Uri>() {
+        // If it has a scheme/authority, extract just the path query
+        if uri.scheme().is_some() || uri.authority().is_some() {
+            return uri
+                .path_and_query()
+                .map(|pq| pq.as_str().to_string())
+                .unwrap_or_else(|| uri.path().to_string());
+        }
+    }
+    // Already relative or invalid URI (return as is)
+    href.to_string()
+}
 
 #[derive(Clone, Debug)]
 pub struct RustyClient {
@@ -88,7 +108,7 @@ impl RustyClient {
         if let Some(client) = &self.client {
             let base_path = client.base_url().path().to_string();
 
-            // 1. Try generic WebDAV list to see if base path is already a calendar
+            // 1. Try generic WebDAV list
             if let Ok(response) = client.request(ListResources::new(&base_path)).await
                 && response.resources.iter().any(|r| r.href.ends_with(".ics"))
             {
@@ -132,7 +152,9 @@ impl RustyClient {
             config.allow_insecure_certs,
         )
         .map_err(|e| e.to_string())?;
+
         let _ = client.sync_journal().await;
+
         let (calendars, warning) = match client.get_calendars().await {
             Ok(c) => {
                 let _ = Cache::save_calendars(&c);
@@ -148,6 +170,7 @@ impl RustyClient {
                 )
             }
         };
+
         let mut active_href = None;
         if let Some(def_cal) = &config.default_calendar
             && let Some(found) = calendars
@@ -169,7 +192,11 @@ impl RustyClient {
                 vec![]
             }
         } else {
-            vec![]
+            if let Some(ref h) = active_href {
+                Cache::load(h).map(|res| res.0).unwrap_or_default()
+            } else {
+                vec![]
+            }
         };
         Ok((client, calendars, tasks, active_href, warning))
     }
@@ -218,15 +245,44 @@ impl RustyClient {
         if calendar_href == LOCAL_CALENDAR_HREF {
             return LocalStorage::load().map_err(|e| e.to_string());
         }
+
+        let (cached_tasks, cached_token) = Cache::load(calendar_href).unwrap_or((vec![], None));
+
         if let Some(client) = &self.client {
             let _ = self.sync_journal().await;
 
+            let path_href = strip_host(calendar_href);
+
+            // 1. Performance: Check CTag/SyncToken
+            let remote_token = if let Ok(resp) = client
+                .request(GetProperty::new(&path_href, &GET_CTAG))
+                .await
+                && let Some(val) = resp.value
+            {
+                Some(val)
+            } else if let Ok(resp) = client
+                .request(GetProperty::new(&path_href, &names::SYNC_TOKEN))
+                .await
+                && let Some(val) = resp.value
+            {
+                Some(val)
+            } else {
+                None
+            };
+
+            if let Some(r_tok) = &remote_token
+                && let Some(c_tok) = &cached_token
+                && r_tok == c_tok
+            {
+                return Ok(cached_tasks);
+            }
+
+            // 2. Fetch remote list
             let list_resp = client
-                .request(ListResources::new(calendar_href))
+                .request(ListResources::new(&path_href))
                 .await
                 .map_err(|e| format!("PROPFIND: {:?}", e))?;
 
-            let cached_tasks = Cache::load(calendar_href).unwrap_or_default();
             let mut cache_map: HashMap<String, Task> = HashMap::new();
             for t in cached_tasks {
                 cache_map.insert(t.href.clone(), t);
@@ -234,13 +290,14 @@ impl RustyClient {
 
             let mut final_tasks = Vec::new();
             let mut to_fetch = Vec::new();
+            let mut server_hrefs = HashSet::new();
 
             for resource in list_resp.resources {
-                // Ignore collection itself or non-ics
                 if !resource.href.ends_with(".ics") {
                     continue;
                 }
 
+                server_hrefs.insert(resource.href.clone());
                 let remote_etag = resource.etag;
 
                 if let Some(local_task) = cache_map.remove(&resource.href) {
@@ -250,17 +307,23 @@ impl RustyClient {
                     {
                         final_tasks.push(local_task);
                     } else {
-                        to_fetch.push(resource.href);
+                        to_fetch.push(strip_host(&resource.href));
                     }
                 } else {
-                    to_fetch.push(resource.href);
+                    to_fetch.push(strip_host(&resource.href));
+                }
+            }
+
+            // 3. Fix "Vanishing Task"
+            for (href, task) in cache_map {
+                if !server_hrefs.contains(&href) && (task.etag.is_empty() || task.href.is_empty()) {
+                    final_tasks.push(task);
                 }
             }
 
             if !to_fetch.is_empty() {
-                // Use calendar-multiget
                 let fetched_resp = client
-                    .request(GetCalendarResources::new(calendar_href).with_hrefs(to_fetch))
+                    .request(GetCalendarResources::new(&path_href).with_hrefs(to_fetch))
                     .await
                     .map_err(|e| format!("MULTIGET: {:?}", e))?;
 
@@ -277,6 +340,8 @@ impl RustyClient {
                     }
                 }
             }
+
+            let _ = Cache::save(calendar_href, &final_tasks, remote_token);
             Ok(final_tasks)
         } else {
             Err("Offline".to_string())
@@ -309,15 +374,17 @@ impl RustyClient {
             LocalStorage::save(&all).map_err(|e| e.to_string())?;
             return Ok(());
         }
+        let cal_path = task.calendar_href.clone();
         let filename = format!("{}.ics", task.uid);
-        let full_href = if task.calendar_href.ends_with('/') {
-            format!("{}{}", task.calendar_href, filename)
+        let full_href = if cal_path.ends_with('/') {
+            format!("{}{}", cal_path, filename)
         } else {
-            format!("{}/{}", task.calendar_href, filename)
+            format!("{}/{}", cal_path, filename)
         };
         task.href = full_href;
 
-        Journal::push(Action::Create(task.clone())).map_err(|e| e.to_string())
+        Journal::push(Action::Create(task.clone())).map_err(|e| e.to_string())?;
+        self.sync_journal().await
     }
 
     pub async fn update_task(&self, task: &mut Task) -> Result<(), String> {
@@ -329,7 +396,8 @@ impl RustyClient {
             }
             return Ok(());
         }
-        Journal::push(Action::Update(task.clone())).map_err(|e| e.to_string())
+        Journal::push(Action::Update(task.clone())).map_err(|e| e.to_string())?;
+        self.sync_journal().await
     }
 
     pub async fn delete_task(&self, task: &Task) -> Result<(), String> {
@@ -339,7 +407,8 @@ impl RustyClient {
             LocalStorage::save(&all).map_err(|e| e.to_string())?;
             return Ok(());
         }
-        Journal::push(Action::Delete(task.clone())).map_err(|e| e.to_string())
+        Journal::push(Action::Delete(task.clone())).map_err(|e| e.to_string())?;
+        self.sync_journal().await
     }
 
     pub async fn toggle_task(&self, task: &mut Task) -> Result<(Task, Option<Task>), String> {
@@ -389,6 +458,7 @@ impl RustyClient {
 
         let mut t = task.clone();
         t.calendar_href = new_calendar_href.to_string();
+        self.sync_journal().await?;
         Ok(t)
     }
 
@@ -397,13 +467,21 @@ impl RustyClient {
         tasks: Vec<Task>,
         target_calendar_href: &str,
     ) -> Result<usize, String> {
-        let mut success_count = 0;
-        for task in tasks {
-            if self.move_task(&task, target_calendar_href).await.is_ok() {
-                success_count += 1;
+        let futures = tasks.into_iter().map(|task| {
+            let client = self.clone();
+            let target = target_calendar_href.to_string();
+            async move { client.move_task(&task, &target).await.ok() }
+        });
+
+        let mut stream = stream::iter(futures).buffer_unordered(4);
+        let mut count = 0;
+
+        while let Some(res) = stream.next().await {
+            if res.is_some() {
+                count += 1;
             }
         }
-        Ok(success_count)
+        Ok(count)
     }
 
     pub async fn sync_journal(&self) -> Result<(), String> {
@@ -417,6 +495,8 @@ impl RustyClient {
         while !journal.is_empty() {
             let action = journal.queue.remove(0);
             let mut conflict_resolved_action = None;
+            let mut new_etag_to_propagate: Option<String> = None;
+            let mut new_href_to_propagate: Option<(String, String)> = None;
 
             let result = match &action {
                 Action::Create(task) => {
@@ -426,32 +506,42 @@ impl RustyClient {
                     } else {
                         format!("{}/{}", task.calendar_href, filename)
                     };
-                    // PutResource::new(href).create(data, content_type)
+
+                    let path = strip_host(&full_href);
                     let ics_string = task.to_ics();
                     match client
-                        .request(PutResource::new(&full_href).create(ics_string, "text/calendar"))
+                        .request(PutResource::new(&path).create(ics_string, "text/calendar"))
                         .await
                     {
-                        Ok(_) => Ok(()),
+                        Ok(resp) => {
+                            if let Some(etag) = resp.etag {
+                                new_etag_to_propagate = Some(etag);
+                            }
+                            Ok(())
+                        }
                         Err(e) => Err(format!("{:?}", e)),
                     }
                 }
                 Action::Update(task) => {
+                    let path = strip_host(&task.href);
                     let ics_string = task.to_ics();
-                    // PutResource::new(href).update(data, content_type, etag)
                     match client
-                        .request(PutResource::new(&task.href).update(
+                        .request(PutResource::new(&path).update(
                             ics_string,
                             "text/calendar; charset=utf-8; component=VTODO",
                             &task.etag,
                         ))
                         .await
                     {
-                        Ok(_) => Ok(()),
+                        Ok(resp) => {
+                            if let Some(etag) = resp.etag {
+                                new_etag_to_propagate = Some(etag);
+                            }
+                            Ok(())
+                        }
                         Err(WebDavError::BadStatusCode(StatusCode::PRECONDITION_FAILED))
                         | Err(WebDavError::PreconditionFailed(_)) => {
-                            // 412: CONFLICT detected
-                            println!("Conflict on task {}. Creating copy.", task.uid);
+                            println!("Conflict (412) on task {}. Creating copy.", task.uid);
                             let mut conflict_copy = task.clone();
                             conflict_copy.uid = Uuid::new_v4().to_string();
                             conflict_copy.summary = format!("{} (Conflict Copy)", task.summary);
@@ -464,27 +554,54 @@ impl RustyClient {
                             conflict_resolved_action = Some(Action::Create(task.clone()));
                             Ok(())
                         }
-                        Err(e) => Err(format!("{:?}", e)),
+                        Err(e) => {
+                            let msg = format!("{:?}", e);
+                            if msg.contains("412") || msg.contains("PreconditionFailed") {
+                                println!(
+                                    "Conflict (412-Fallback) on task {}. Creating copy.",
+                                    task.uid
+                                );
+                                let mut conflict_copy = task.clone();
+                                conflict_copy.uid = Uuid::new_v4().to_string();
+                                conflict_copy.summary = format!("{} (Conflict Copy)", task.summary);
+                                conflict_copy.href = String::new();
+                                conflict_copy.etag = String::new();
+                                conflict_resolved_action = Some(Action::Create(conflict_copy));
+                                Ok(())
+                            } else {
+                                Err(msg)
+                            }
+                        }
                     }
                 }
                 Action::Delete(task) => {
-                    // Delete::new(href).with_etag(etag)
+                    let path = strip_host(&task.href);
                     match client
-                        .request(Delete::new(&task.href).with_etag(&task.etag))
+                        .request(Delete::new(&path).with_etag(&task.etag))
                         .await
                     {
                         Ok(_) => Ok(()),
                         Err(WebDavError::BadStatusCode(StatusCode::NOT_FOUND)) => Ok(()),
                         Err(WebDavError::BadStatusCode(StatusCode::PRECONDITION_FAILED)) => {
-                            // Etag mismatch on delete - just force delete or ignore?
-                            // Safe route: Ignore, assume it changed and user can delete again if they see it.
                             println!("Conflict on delete task {}. Ignoring.", task.uid);
                             Ok(())
                         }
                         Err(e) => Err(format!("{:?}", e)),
                     }
                 }
-                Action::Move(task, new_cal) => self.execute_move(task, new_cal).await,
+                Action::Move(task, new_cal) => match self.execute_move(task, new_cal).await {
+                    Ok(_) => {
+                        let filename = format!("{}.ics", task.uid);
+                        let new_href = if new_cal.ends_with('/') {
+                            format!("{}{}", new_cal, filename)
+                        } else {
+                            format!("{}/{}", new_cal, filename)
+                        };
+                        new_href_to_propagate = Some((task.href.clone(), new_href));
+                        Ok(())
+                    }
+                    Err(e) => Err(e),
+                },
             };
 
             match result {
@@ -492,13 +609,66 @@ impl RustyClient {
                     if let Some(act) = conflict_resolved_action {
                         let _ = journal.push_front(act);
                     }
+
+                    if let Some(etag) = new_etag_to_propagate {
+                        let target_uid = match &action {
+                            Action::Create(t) | Action::Update(t) => t.uid.clone(),
+                            _ => String::new(),
+                        };
+
+                        if !target_uid.is_empty() {
+                            for item in &mut journal.queue {
+                                match item {
+                                    Action::Update(t) | Action::Delete(t) => {
+                                        if t.uid == target_uid {
+                                            t.etag = etag.clone();
+                                        }
+                                    }
+                                    Action::Move(t, _) => {
+                                        if t.uid == target_uid {
+                                            t.etag = etag.clone();
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+
+                    if let Some((old_href, new_href)) = new_href_to_propagate {
+                        let target_uid = match &action {
+                            Action::Move(t, _) => t.uid.clone(),
+                            _ => String::new(),
+                        };
+
+                        for item in &mut journal.queue {
+                            match item {
+                                Action::Update(t) | Action::Delete(t) => {
+                                    if t.uid == target_uid || t.href == old_href {
+                                        t.href = new_href.clone();
+                                        if let Some(last_slash) = new_href.rfind('/') {
+                                            t.calendar_href = new_href[..=last_slash].to_string();
+                                        }
+                                    }
+                                }
+                                Action::Move(t, _) => {
+                                    if t.uid == target_uid {
+                                        t.href = new_href.clone();
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+
                     journal.save().map_err(|e| e.to_string())?;
                 }
                 Err(e) => {
-                    eprintln!("Sync Error: {}. Stopping sync.", e);
+                    // Removed eprintln! to fix TUI
                     let _ = journal.push_front(action);
                     journal.save().map_err(|e| e.to_string())?;
-                    break;
+                    // Return the error so GUI can display it
+                    return Err(e);
                 }
             }
         }
@@ -514,14 +684,24 @@ impl RustyClient {
             format!("{}/{}.ics", new_calendar_href, task.uid)
         };
 
-        // Construct raw HTTP request for MOVE using the underlying WebDavClient
-        // We access the underlying client via Deref or direct field access depending on libdav implementation.
-        // CalDavClient derefs to WebDavClient.
+        // RESOLVE SOURCE URI: Must be absolute for Hyper
+        let source_path = strip_host(&task.href);
+        let source_uri = client
+            .webdav_client
+            .relative_uri(&source_path)
+            .map_err(|e| format!("Invalid source URI: {}", e))?;
+
+        // RESOLVE DESTINATION URI
+        let dest_path = strip_host(&destination);
+        let dest_uri = client
+            .webdav_client
+            .relative_uri(&dest_path)
+            .map_err(|e| format!("Invalid dest URI: {}", e))?;
 
         let req = Request::builder()
             .method("MOVE")
-            .uri(&task.href)
-            .header("Destination", &destination)
+            .uri(source_uri) // Must be absolute for Hyper!
+            .header("Destination", dest_uri.to_string())
             .header("Overwrite", "F")
             .body(String::new())
             .map_err(|e| e.to_string())?;

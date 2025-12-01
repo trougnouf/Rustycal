@@ -384,7 +384,7 @@ impl GuiApp {
                     if cal.href == LOCAL_CALENDAR_HREF {
                         continue;
                     }
-                    if let Ok(cached_tasks) = Cache::load(&cal.href) {
+                    if let Ok((cached_tasks, _)) = Cache::load(&cal.href) {
                         self.store.insert(cal.href.clone(), cached_tasks);
                     }
                 }
@@ -453,7 +453,6 @@ impl GuiApp {
             Message::RefreshedAll(Ok(results)) => {
                 for (href, tasks) in results {
                     self.store.insert(href.clone(), tasks.clone());
-                    let _ = Cache::save(&href, &tasks);
                 }
                 self.refresh_filtered_tasks();
                 self.loading = false;
@@ -465,22 +464,13 @@ impl GuiApp {
                 Task::none()
             }
             Message::TasksRefreshed(Ok((href, tasks))) => {
-                // If a sync succeeds, clear any lingering connection errors
                 self.error_msg = None;
-                // Always update store (background sync is valid)
                 self.store.insert(href.clone(), tasks.clone());
-                // Cache it
-                if href != LOCAL_CALENDAR_HREF {
-                    let _ = Cache::save(&href, &tasks);
-                }
 
-                // ONLY refresh view if this is still the active calendar
                 if self.active_cal_href.as_deref() == Some(&href) {
                     self.refresh_filtered_tasks();
                     self.loading = false;
                 }
-                // If it's not active, we quietly updated the background store.
-                // We do NOT turn off 'loading' if the active calendar is different (it might still be loading).
                 Task::none()
             }
             Message::TasksRefreshed(Err(e)) => {
@@ -730,7 +720,9 @@ impl GuiApp {
                     && let Some(idx) = tasks.iter().position(|t| t.uid == updated.uid)
                 {
                     tasks[idx] = updated.clone();
-                    let _ = Cache::save(&updated.calendar_href, tasks);
+                    // Load existing token to preserve it
+                    let (_, token) = Cache::load(&updated.calendar_href).unwrap_or((vec![], None));
+                    let _ = Cache::save(&updated.calendar_href, tasks, token);
                 }
 
                 // Check if we still have pending items
@@ -758,7 +750,10 @@ impl GuiApp {
                         if let Some(created) = created_opt {
                             tasks.push(created);
                         }
-                        let _ = Cache::save(&updated.calendar_href, tasks);
+                        // For local optimistic updates, we DO save, but we must preserve the token.
+                        let (_, token) =
+                            Cache::load(&updated.calendar_href).unwrap_or((vec![], None));
+                        let _ = Cache::save(&updated.calendar_href, tasks, token);
                     }
                     self.refresh_filtered_tasks();
                     Task::none()
@@ -786,7 +781,8 @@ impl GuiApp {
                 if let Some(task) = self.tasks.get(index).cloned() {
                     if let Some(tasks) = self.store.calendars.get_mut(&task.calendar_href) {
                         tasks.retain(|t| t.uid != task.uid);
-                        let _ = Cache::save(&task.calendar_href, tasks);
+                        let (_, token) = Cache::load(&task.calendar_href).unwrap_or((vec![], None));
+                        let _ = Cache::save(&task.calendar_href, tasks, token);
                     }
                     self.refresh_filtered_tasks();
                     if let Some(client) = &self.client {
@@ -1076,7 +1072,8 @@ impl GuiApp {
                     // Remove from old list
                     if let Some(old_list) = self.store.calendars.get_mut(&task.calendar_href) {
                         old_list.retain(|t| t.uid != task_uid);
-                        let _ = Cache::save(&task.calendar_href, old_list);
+                        let (_, token) = Cache::load(&task.calendar_href).unwrap_or((vec![], None));
+                        let _ = Cache::save(&task.calendar_href, old_list, token);
                     }
 
                     // Add to new list (locally constructed version)
@@ -1103,16 +1100,14 @@ impl GuiApp {
             }
 
             Message::TaskMoved(Ok(new_task)) => {
-                // Server confirmed creation. Update the store with the "real" task (w/ ETag)
                 if let Some(list) = self.store.calendars.get_mut(&new_task.calendar_href) {
-                    // Replace the optimistic one (which has no ETag) with the real one
                     if let Some(idx) = list.iter().position(|t| t.uid == new_task.uid) {
                         list[idx] = new_task.clone();
                     } else {
-                        // Should be there from optimistic update, but just in case
                         list.push(new_task.clone());
                     }
-                    let _ = Cache::save(&new_task.calendar_href, list);
+                    let (_, token) = Cache::load(&new_task.calendar_href).unwrap_or((vec![], None));
+                    let _ = Cache::save(&new_task.calendar_href, list, token);
                 }
                 self.refresh_filtered_tasks();
                 Task::none()

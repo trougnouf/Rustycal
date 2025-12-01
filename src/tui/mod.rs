@@ -135,8 +135,9 @@ pub async fn run() -> Result<()> {
             // Load Remote Cache
             for cal in &cached_cals {
                 if cal.href != LOCAL_CALENDAR_HREF {
-                    if let Ok(t) = Cache::load(&cal.href) {
-                        cached_tasks.push((cal.href.clone(), t));
+                    // Cache::load returns (tasks, token). We only need tasks (.0) for the UI here.
+                    if let Ok((tasks, _)) = Cache::load(&cal.href) {
+                        cached_tasks.push((cal.href.clone(), tasks));
                     }
                 }
             }
@@ -213,7 +214,8 @@ pub async fn run() -> Result<()> {
         let mut cached_results = Vec::new();
         for cal in &calendars {
             if cal.href != LOCAL_CALENDAR_HREF
-                && let Ok(tasks) = Cache::load(&cal.href)
+                && let Ok((tasks, _)) = Cache::load(&cal.href)
+            // Destructure tuple
             {
                 cached_results.push((cal.href.clone(), tasks));
             }
@@ -504,7 +506,6 @@ pub async fn run() -> Result<()> {
                 AppEvent::TasksLoaded(results) => {
                     for (href, tasks) in results {
                         app_state.store.insert(href.clone(), tasks.clone());
-                        let _ = Cache::save(&href, &tasks);
                     }
                     app_state.refresh_filtered_view();
                     app_state.loading = false;
