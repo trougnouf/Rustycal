@@ -662,7 +662,7 @@ pub async fn run() -> Result<()> {
                                     .push(new_task_local);
                                 app_state.refresh_filtered_view();
                                 let _ = action_tx.send(Action::MoveTask(task, target_href)).await;
-                                app_state.message = format!("Moving task...");
+                                app_state.message = "Moving task...".to_string();
                             }
                             app_state.mode = InputMode::Normal;
                         }
@@ -735,8 +735,8 @@ pub async fn run() -> Result<()> {
                             app_state.yanked_uid = None;
                         }
                         KeyCode::Char('c') => {
-                            if let Some(parent_uid) = &app_state.yanked_uid {
-                                if let Some(view_task) = app_state.get_selected_task().cloned() {
+                            if let Some(parent_uid) = &app_state.yanked_uid
+                                && let Some(view_task) = app_state.get_selected_task().cloned() {
                                     if view_task.uid == *parent_uid {
                                         app_state.message = "Cannot be child of self!".to_string();
                                     } else {
@@ -753,7 +753,6 @@ pub async fn run() -> Result<()> {
                                         app_state.refresh_filtered_view();
                                     }
                                 }
-                            }
                         }
                         KeyCode::Char('/') => {
                             app_state.mode = InputMode::Searching;
@@ -803,8 +802,8 @@ pub async fn run() -> Result<()> {
 
                         KeyCode::Char(' ') => {
                             if app_state.active_focus == Focus::Sidebar {
-                                if app_state.sidebar_mode == SidebarMode::Calendars {
-                                    if let Some(idx) = app_state.cal_state.selected() {
+                                if app_state.sidebar_mode == SidebarMode::Calendars
+                                    && let Some(idx) = app_state.cal_state.selected() {
                                         // CHANGED: Use get_filtered_calendars()
                                         let filtered = app_state.get_filtered_calendars();
                                         if let Some(cal) = filtered.get(idx) {
@@ -825,7 +824,6 @@ pub async fn run() -> Result<()> {
                                             }
                                         }
                                     }
-                                }
                             } else if app_state.active_focus == Focus::Main
                                 && let Some(task) = app_state.get_selected_task().cloned()
                             {
@@ -896,8 +894,8 @@ pub async fn run() -> Result<()> {
                                 "New Task (e.g. 'Buy Milk !1 @tomorrow')...".to_string();
                         }
                         KeyCode::Char('e') => {
-                            if app_state.active_focus == Focus::Main {
-                                if let Some(smart_str) =
+                            if app_state.active_focus == Focus::Main
+                                && let Some(smart_str) =
                                     app_state.get_selected_task().map(|t| t.to_smart_string())
                                 {
                                     app_state.editing_index = app_state.list_state.selected();
@@ -906,11 +904,10 @@ pub async fn run() -> Result<()> {
                                         app_state.input_buffer.chars().count();
                                     app_state.mode = InputMode::Editing;
                                 }
-                            }
                         }
                         KeyCode::Char('E') => {
-                            if app_state.active_focus == Focus::Main {
-                                if let Some(d) =
+                            if app_state.active_focus == Focus::Main
+                                && let Some(d) =
                                     app_state.get_selected_task().map(|t| t.description.clone())
                                 {
                                     app_state.editing_index = app_state.list_state.selected();
@@ -919,7 +916,6 @@ pub async fn run() -> Result<()> {
                                         app_state.input_buffer.chars().count();
                                     app_state.mode = InputMode::EditingDescription;
                                 }
-                            }
                         }
                         KeyCode::Char('d') => {
                             if app_state.active_focus == Focus::Main
@@ -1029,8 +1025,8 @@ pub async fn run() -> Result<()> {
                             let _ = action_tx.send(Action::Refresh).await;
                         }
                         KeyCode::Char('b') => {
-                            if let Some(yanked) = &app_state.yanked_uid {
-                                if let Some(current) = app_state.get_selected_task() {
+                            if let Some(yanked) = &app_state.yanked_uid
+                                && let Some(current) = app_state.get_selected_task() {
                                     if current.uid == *yanked {
                                         app_state.message = "Cannot depend on self!".to_string();
                                     } else {
@@ -1051,7 +1047,6 @@ pub async fn run() -> Result<()> {
                                         }
                                     }
                                 }
-                            }
                         }
                         KeyCode::Char('X') => {
                             if app_state.active_cal_href.as_deref() == Some(LOCAL_CALENDAR_HREF) {

@@ -116,17 +116,14 @@ impl RustyClient {
             }
 
             // 2. Try CalDAV Discovery
-            if let Ok(Some(principal)) = client.find_current_user_principal().await {
-                if let Ok(response) = client.request(FindCalendarHomeSet::new(&principal)).await
+            if let Ok(Some(principal)) = client.find_current_user_principal().await
+                && let Ok(response) = client.request(FindCalendarHomeSet::new(&principal)).await
                     && let Some(home_url) = response.home_sets.first()
-                {
-                    if let Ok(cals_resp) = client.request(FindCalendars::new(home_url)).await
+                    && let Ok(cals_resp) = client.request(FindCalendars::new(home_url)).await
                         && let Some(first) = cals_resp.calendars.first()
                     {
                         return Ok(first.href.clone());
                     }
-                }
-            }
             Ok(base_path)
         } else {
             Err("Offline".to_string())
@@ -191,12 +188,10 @@ impl RustyClient {
             } else {
                 vec![]
             }
+        } else if let Some(ref h) = active_href {
+            Cache::load(h).map(|res| res.0).unwrap_or_default()
         } else {
-            if let Some(ref h) = active_href {
-                Cache::load(h).map(|res| res.0).unwrap_or_default()
-            } else {
-                vec![]
-            }
+            vec![]
         };
         Ok((client, calendars, tasks, active_href, warning))
     }
@@ -328,8 +323,8 @@ impl RustyClient {
                     .map_err(|e| format!("MULTIGET: {:?}", e))?;
 
                 for item in fetched_resp.resources {
-                    if let Ok(content) = item.content {
-                        if let Ok(task) = Task::from_ics(
+                    if let Ok(content) = item.content
+                        && let Ok(task) = Task::from_ics(
                             &content.data,
                             content.etag,
                             item.href,
@@ -337,7 +332,6 @@ impl RustyClient {
                         ) {
                             final_tasks.push(task);
                         }
-                    }
                 }
             }
 

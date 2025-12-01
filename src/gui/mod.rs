@@ -303,7 +303,7 @@ impl GuiApp {
                 // Relying on Refresh or lazy fetch. For now, we update the view filter.
                 // Ideally trigger a fetch if we have an efficient batch fetch.
                 // Triggering a full refresh is safest to ensure all data is present:
-                return Task::perform(async { Ok::<(), String>(()) }, |_| Message::Refresh);
+                Task::perform(async { Ok::<(), String>(()) }, |_| Message::Refresh)
             }
             Message::IsolateCalendar(href) => {
                 if self.sidebar_mode == SidebarMode::Categories {
@@ -389,10 +389,10 @@ impl GuiApp {
 
                 // If we already have an active calendar selected, and it exists in the new list, keep it.
                 // Otherwise fallback to the one suggested by the client (default/discovered).
-                if let Some(current) = &self.active_cal_href {
-                    if self.calendars.iter().any(|c| c.href == *current) {
-                        active = Some(current.clone());
-                    }
+                if let Some(current) = &self.active_cal_href
+                    && self.calendars.iter().any(|c| c.href == *current)
+                {
+                    active = Some(current.clone());
                 }
 
                 if active.is_none() {
