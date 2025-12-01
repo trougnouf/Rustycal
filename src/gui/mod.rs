@@ -344,14 +344,12 @@ impl GuiApp {
             Message::Loaded(Ok((client, mut cals, tasks, mut active, warning))) => {
                 self.client = Some(client.clone());
 
-                // If we got a warning (e.g. Offline), set it.
                 if let Some(w) = warning {
                     self.error_msg = Some(w);
                 } else {
                     self.error_msg = None;
                 }
 
-                // Check Journal status immediately
                 self.unsynced_changes = !Journal::load().is_empty();
 
                 // 1. INJECT LOCAL CALENDAR
@@ -361,15 +359,15 @@ impl GuiApp {
                     color: None,
                 };
 
-                if !self.hidden_calendars.contains(LOCAL_CALENDAR_HREF) {
-                    // Avoid duplicate if cache already had it
-                    if !cals.iter().any(|c| c.href == LOCAL_CALENDAR_HREF) {
-                        cals.push(local_entry);
-                    }
+                // Always inject Local calendar, regardless of visibility state.
+                // It should only be filtered by the View, not removed from the State.
+                if !cals.iter().any(|c| c.href == LOCAL_CALENDAR_HREF) {
+                    cals.push(local_entry);
                 }
+
                 self.calendars = cals.clone();
 
-                // 2. INITIALIZE STORE (Clear old data first)
+                // 2. INITIALIZE STORE
                 self.store.clear();
 
                 if let Ok(local_t) = TOKIO_RUNTIME
@@ -386,6 +384,14 @@ impl GuiApp {
                     }
                     if let Ok((cached_tasks, _)) = Cache::load(&cal.href) {
                         self.store.insert(cal.href.clone(), cached_tasks);
+                    }
+                }
+
+                // If we already have an active calendar selected, and it exists in the new list, keep it.
+                // Otherwise fallback to the one suggested by the client (default/discovered).
+                if let Some(current) = &self.active_cal_href {
+                    if self.calendars.iter().any(|c| c.href == *current) {
+                        active = Some(current.clone());
                     }
                 }
 

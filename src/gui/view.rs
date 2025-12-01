@@ -886,6 +886,12 @@ fn view_task_row<'a>(app: &'a GuiApp, index: usize, task: &'a TodoTask) -> Eleme
     // threshold tuned to typical widths; tweak as needed
     let place_inline = (title_chars + est_tags_len) <= 60;
 
+    // Helper boolean to check if we have ANY metadata to display (Tags, Duration, Recurrence, Blocked)
+    let has_metadata = !task.categories.is_empty()
+        || task.rrule.is_some()
+        || is_blocked
+        || task.estimated_duration.is_some();
+
     let title_row = if place_inline {
         row![
             text(&task.summary)
@@ -893,7 +899,7 @@ fn view_task_row<'a>(app: &'a GuiApp, index: usize, task: &'a TodoTask) -> Eleme
                 .color(color)
                 .width(Length::Fill),
             // show tags inline to the right when small enough
-            if !task.categories.is_empty() || task.rrule.is_some() || is_blocked {
+            if has_metadata {
                 build_tags()
             } else {
                 horizontal_space().width(Length::Fixed(0.0)).into()
@@ -909,15 +915,13 @@ fn view_task_row<'a>(app: &'a GuiApp, index: usize, task: &'a TodoTask) -> Eleme
                 .width(Length::Fill)
         ]
         .spacing(6)
-        // .align_y(...) is less critical here as it's just text,
-        // but adding it doesn't hurt:
         .align_y(iced::Alignment::Center)
     };
 
     let main_text_col = column![
         title_row,
         // If we didn't place tags inline, show them on a separate right-aligned row
-        if !place_inline && (!task.categories.is_empty() || task.rrule.is_some() || is_blocked) {
+        if !place_inline && has_metadata {
             row![horizontal_space(), build_tags()]
         } else {
             row![]
