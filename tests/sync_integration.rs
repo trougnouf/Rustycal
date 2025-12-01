@@ -1,11 +1,21 @@
+// File: ./tests/sync_integration.rs
 use cfait::client::RustyClient;
 use cfait::journal::Action;
 use cfait::model::Task;
 use mockito::Server;
 use std::collections::HashMap;
+use std::env;
+use std::fs;
 
 #[tokio::test]
 async fn test_sync_recovers_from_412() {
+    // 0. Setup Isolation
+    let temp_dir = env::temp_dir().join(format!("cfait_test_sync_{}", std::process::id()));
+    let _ = fs::create_dir_all(&temp_dir);
+    unsafe {
+        env::set_var("CFAIT_TEST_DIR", &temp_dir);
+    }
+
     // 1. Setup Mock Server
     let mut server = Server::new_async().await;
     let url = server.url();
@@ -22,14 +32,12 @@ async fn test_sync_recovers_from_412() {
         .await;
 
     // 3. Mock: The Safe Resolution (Create Conflict Copy)
-    // The client should immediately create a NEW file with a NEW UUID.
-    // We match any PUT to the calendar directory that is NOT the original task.
     let mock_conflict_copy = server
         .mock(
             "PUT",
             mockito::Matcher::Regex(r"^/cal/.*\.ics$".to_string()),
         )
-        .match_header("If-None-Match", "*") // Ensure it's a CREATE
+        .match_header("If-None-Match", "*")
         .match_body(mockito::Matcher::Regex(r"Conflict Copy".to_string()))
         .with_status(201)
         .create_async()
@@ -46,9 +54,11 @@ async fn test_sync_recovers_from_412() {
     task.description = "Local Description".to_string();
     task.etag = "old-etag".to_string();
 
-    // Clear existing journal
+    // Clean any residual file in temp (unlikely, but safe)
     if let Some(p) = cfait::journal::Journal::get_path() {
-        let _ = std::fs::remove_file(p);
+        if p.exists() {
+            let _ = fs::remove_file(p);
+        }
     }
 
     cfait::journal::Journal::push(Action::Update(task)).unwrap();
@@ -69,4 +79,10 @@ async fn test_sync_recovers_from_412() {
         j.is_empty(),
         "Journal should be empty after successful sync"
     );
+
+    // CLEANUP
+    unsafe {
+        env::remove_var("CFAIT_TEST_DIR");
+    }
+    let _ = fs::remove_dir_all(&temp_dir);
 }

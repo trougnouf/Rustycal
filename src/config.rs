@@ -1,4 +1,4 @@
-use crate::storage::LocalStorage; // Import
+use crate::storage::LocalStorage;
 use anyhow::Result;
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
@@ -59,8 +59,11 @@ impl Config {
 
     pub fn save(&self) -> Result<()> {
         let path = Self::get_path()?;
-        let toml_str = toml::to_string_pretty(self)?;
-        LocalStorage::atomic_write(path, toml_str)?; // Atomic
+        LocalStorage::with_lock(&path, || {
+            let toml_str = toml::to_string_pretty(self)?;
+            LocalStorage::atomic_write(&path, toml_str)?;
+            Ok(())
+        })?;
         Ok(())
     }
 
