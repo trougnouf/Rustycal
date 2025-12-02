@@ -19,8 +19,7 @@ jobs:
         uses: https://codeberg.org/wackbyte/rust-toolchain@trunk
         with:
           toolchain: stable
-          # We need this target for the Windows cross-compile step
-          targets: x86_64-pc-windows-gnu 
+          targets: x86_64-pc-windows-gnu
 
       - name: Cache cargo dependencies
         uses: actions/cache@v4
@@ -33,16 +32,20 @@ jobs:
             target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Install System Dependencies (Linux & Windows Cross)
+      - name: Install System Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libfontconfig1-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev mingw-w64
+          # FIX: Add 'lld' here as well
+          sudo apt-get install -y libfontconfig1-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev mingw-w64 lld
 
       - name: Install Packaging Tools
         run: cargo install cargo-deb
 
       # --- BUILD LINUX ---
       - name: Build Linux (Release)
+        env:
+          # Use lld for Linux release build to prevent OOM
+          RUSTFLAGS: "-C link-arg=-fuse-ld=lld"
         run: cargo build --release --features gui
 
       - name: Create Linux Packages
@@ -64,10 +67,12 @@ jobs:
           cp assets/cfait.svg "$STAGING/"
           tar -czvf "cfait-linux-$VERSION.tar.gz" "$STAGING"
 
+          # Prepare Arch PKGBUILD if tagged
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             SOURCE_URL="${{ github.server_url }}/${{ github.repository }}/archive/${{ github.ref_name }}.tar.gz"
-            wget -O source.tar.gz "$SOURCE_URL"
-            HASH=$(sha256sum source.tar.gz | awk '{print $1}')
+            # We use curl -L -O to handle redirects properly
+            curl -L -O "$SOURCE_URL"
+            HASH=$(sha256sum "${{ github.ref_name }}.tar.gz" | awk '{print $1}')
             sed -i "s/'SKIP'/'$HASH'/" packaging/arch/PKGBUILD
             cp packaging/arch/PKGBUILD PKGBUILD-release
           fi
@@ -75,7 +80,7 @@ jobs:
       # --- BUILD WINDOWS (CROSS) ---
       - name: Build Windows (Cross-compile)
         run: |
-          # The target x86_64-pc-windows-gnu was installed by the rust-toolchain action above
+          # MinGW usually uses its own ld, so we don't pass -fuse-ld=lld here to be safe
           cargo build --release --target x86_64-pc-windows-gnu --features gui
 
       - name: Package Windows
@@ -99,7 +104,7 @@ jobs:
       - name: Install Tea (Gitea CLI)
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          # Using 0.9.2 to be safe, check https://dl.gitea.io/tea/ for available versions
+          # Verify the version on https://gitea.com/gitea/tea/releases
           wget -O tea https://dl.gitea.io/tea/0.9.2/tea-0.9.2-linux-amd64
           chmod +x tea
           sudo mv tea /usr/local/bin/
@@ -119,10 +124,8 @@ jobs:
         run: |
           tea login add --name codeberg --url ${{ github.server_url }} --token ${{ secrets.RELEASE_TOKEN }}
           
-          # Create release
           tea release create --repo ${{ github.repository }} --tag ${{ github.ref_name }} --title ${{ github.ref_name }} --note-file CHANGELOG_RELEASE.md
 
-          # Upload artifacts
           tea release upload --repo ${{ github.repository }} --tag ${{ github.ref_name }} --file target/debian/*.deb
           tea release upload --repo ${{ github.repository }} --tag ${{ github.ref_name }} --file cfait-linux-*.tar.gz
           tea release upload --repo ${{ github.repository }} --tag ${{ github.ref_name }} --file cfait-windows-*.zip

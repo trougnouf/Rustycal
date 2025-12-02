@@ -2,6 +2,12 @@ name: Test and Lint
 
 on: [push, pull_request]
 
+# Set global environment variables to optimize the build
+env:
+  # 1. Use lld linker (faster, less memory)
+  # 2. Reduce debug info to line-tables (saves huge amount of RAM)
+  RUSTFLAGS: "-C link-arg=-fuse-ld=lld -C debuginfo=1"
+
 jobs:
   test:
     runs-on: codeberg-medium
@@ -29,7 +35,8 @@ jobs:
       - name: Install System Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libfontconfig1-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev
+          # FIX: Add 'lld' to the install list
+          sudo apt-get install -y libfontconfig1-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev lld
 
       - name: Run linter (clippy)
         run: cargo clippy --all-features -- -D warnings
