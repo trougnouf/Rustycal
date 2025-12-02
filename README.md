@@ -32,7 +32,7 @@ It features both an efficient **TUI (Terminal UI)** and a modern **GUI (Graphica
 
 ### A. Pre-built Packages
 
-You can find pre-compiled binaries for Linux and Windows on the [**GitHub Releases page**](https://github.com/trougnouf/cfait/releases).
+You can find pre-compiled binaries for Linux and Windows on the [**GitHub Releases page**](https://codeberg.org/trougnouf/cfait/releases).
 
 *   **Arch Linux:** Install from the AUR using your favorite helper (e.g., `yay`, `paru`).
     ```bash
@@ -43,12 +43,12 @@ You can find pre-compiled binaries for Linux and Windows on the [**GitHub Releas
     yay -S cfait-git
     ```
 
-*   **Debian / Ubuntu:** Download the `.deb` file from the [releases page](https://github.com/trougnouf/cfait/releases) and install it:
+*   **Debian / Ubuntu:** Download the `.deb` file from the [releases page](https://codeberg.org/trougnouf/cfait/releases) and install it:
     ```bash
     sudo dpkg -i /path/to/downloaded/cfait_*.deb
     ```
 
-*   **Windows:** Download the `.zip` archive from the [releases page](https://github.com/trougnouf/cfait/releases), extract it, and run `cfait.exe` (TUI) or `cfait-gui.exe` (GUI).
+*   **Windows:** Download the `.zip` archive from the [releases page](https://codeberg.org/trougnouf/cfait/releases), extract it, and run `cfait.exe` (TUI) or `cfait-gui.exe` (GUI).
 
 *   **Other Linux:** Download the generic `cfait-linux-*.tar.gz` archive, extract it, and place the binaries (`cfait`, `cfait-gui`) in your `$PATH` (e.g., `~/.local/bin/` or `/usr/local/bin/`).
 
@@ -69,7 +69,7 @@ cargo install cfait
 If you want to contribute to Cfait, clone the repository and build it locally:
 
 ```bash
-git clone https://github.com/trougnouf/cfait.git
+git clone https://codeberg.org/trougnouf/cfait.git
 cd cfait
 
 # Run the TUI

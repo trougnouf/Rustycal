@@ -5,14 +5,15 @@ edition = "2024"
 description = "A simple, elegant, and lightweight CalDAV task manager (TUI & GUI)"
 license = "GPL-3.0"
 default-run = "cfait" # Default to TUI when running 'cargo run'
-repository = "https://github.com/trougnouf/cfait"
-homepage = "https://github.com/trougnouf/cfait"
+repository = "https://codeberg.org/trougnouf/cfait"
+homepage = "https://codeberg.org/trougnouf/cfait"
 readme = "README.md"
 keywords = ["caldav", "todo", "task", "tui", "gui"]
 categories = ["command-line-utilities"]
 exclude = [
     # Git and CI related files
     ".github/*",
+    ".forgejo/*",
     ".gitignore",
     "packaging/*",
     # License generation tooling

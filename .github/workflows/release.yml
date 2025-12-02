@@ -127,7 +127,7 @@ jobs:
       - name: Generate Production PKGBUILD
         run: |
           VERSION=${{ github.ref_name }}
-          SOURCE_URL="https://github.com/${{ github.repository }}/archive/${{ github.ref_name }}.tar.gz"
+          SOURCE_URL="https://codeberg.org/${{ github.repository }}/archive/${{ github.ref_name }}.tar.gz"
           
           wget -O source.tar.gz "$SOURCE_URL"
           
