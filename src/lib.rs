@@ -6,8 +6,6 @@ pub mod model;
 pub mod storage;
 pub mod store;
 
-// mod tests_merge;
-
 #[cfg(feature = "tui")]
 pub mod tui;
 

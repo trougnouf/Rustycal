@@ -1,0 +1,354 @@
+// File: ./src/gui/view/mod.rs
+pub mod settings;
+pub mod sidebar;
+pub mod task_row;
+
+use crate::gui::icon;
+use crate::gui::message::Message;
+use crate::gui::state::{AppState, GuiApp, SidebarMode};
+use crate::gui::view::settings::view_settings;
+use crate::gui::view::sidebar::{view_sidebar_calendars, view_sidebar_categories};
+use crate::gui::view::task_row::view_task_row;
+use crate::storage::LOCAL_CALENDAR_HREF;
+
+use iced::widget::{container, row, scrollable, text};
+use iced::{Background, Color, Element, Length, Theme};
+
+pub fn root_view(app: &GuiApp) -> Element<'_, Message> {
+    match app.state {
+        AppState::Loading => container(text("Loading...").size(30))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x(Length::Fill)
+            .center_y(Length::Fill)
+            .into(),
+        AppState::Onboarding | AppState::Settings => view_settings(app),
+        AppState::Active => {
+            let layout = row![
+                view_sidebar(app),
+                iced::widget::Rule::vertical(1),
+                container(view_main_content(app))
+                    .width(Length::Fill)
+                    .center_x(Length::Fill)
+            ];
+            container(layout)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+        }
+    }
+}
+
+fn view_sidebar(app: &GuiApp) -> Element<'_, Message> {
+    // 1. Tab Switcher
+    let btn_cals = iced::widget::button(
+        container(text("Calendars").size(14))
+            .width(Length::Fill)
+            .align_x(iced::alignment::Horizontal::Center),
+    )
+    .padding(5)
+    .width(Length::Fill)
+    .style(if app.sidebar_mode == SidebarMode::Calendars {
+        iced::widget::button::primary
+    } else {
+        iced::widget::button::secondary
+    })
+    .on_press(Message::SidebarModeChanged(SidebarMode::Calendars));
+
+    let btn_tags = iced::widget::button(
+        container(text("Tags").size(14))
+            .width(Length::Fill)
+            .align_x(iced::alignment::Horizontal::Center),
+    )
+    .padding(5)
+    .width(Length::Fill)
+    .style(if app.sidebar_mode == SidebarMode::Categories {
+        iced::widget::button::primary
+    } else {
+        iced::widget::button::secondary
+    })
+    .on_press(Message::SidebarModeChanged(SidebarMode::Categories));
+
+    let tabs = row![btn_cals, btn_tags].spacing(5);
+
+    // 2. Content based on Tab
+    let content = match app.sidebar_mode {
+        SidebarMode::Calendars => view_sidebar_calendars(app),
+        SidebarMode::Categories => view_sidebar_categories(app),
+    };
+
+    // 3. Footer (Settings)
+    let settings_btn =
+        iced::widget::button(row![text("Settings").size(16)].align_y(iced::Alignment::Center))
+            .padding(10)
+            .width(Length::Fill)
+            .style(iced::widget::button::secondary)
+            .on_press(Message::OpenSettings);
+
+    let sidebar_inner =
+        iced::widget::column![tabs, scrollable(content).height(Length::Fill), settings_btn]
+            .spacing(10)
+            .padding(10);
+
+    container(sidebar_inner)
+        .width(200)
+        .height(Length::Fill)
+        .style(|theme: &Theme| {
+            let palette = theme.extended_palette();
+            container::Style {
+                background: Some(Background::Color(palette.background.weak.color)),
+                ..Default::default()
+            }
+        })
+        .into()
+}
+
+fn view_main_content(app: &GuiApp) -> Element<'_, Message> {
+    let title_text = if app.loading {
+        "Loading...".to_string()
+    } else if app.active_cal_href.is_none() {
+        if app.selected_categories.is_empty() {
+            "All Tasks".to_string()
+        } else {
+            format!("Tasks ({})", app.tasks.len())
+        }
+    } else {
+        app.calendars
+            .iter()
+            .find(|c| Some(&c.href) == app.active_cal_href.as_ref())
+            .map(|c| c.name.clone())
+            .unwrap_or("Calendar".to_string())
+    };
+
+    // --- HEADER ICONS (Unsynced + Refresh) ---
+    let mut header_icons = row![].spacing(10).align_y(iced::Alignment::Center);
+
+    if app.unsynced_changes {
+        header_icons = header_icons.push(
+            container(text("Unsynced").size(12).color(Color::WHITE))
+                .style(|_| container::Style {
+                    background: Some(Color::from_rgb(0.8, 0.5, 0.0).into()), // Orange
+                    border: iced::Border {
+                        radius: 4.0.into(),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                })
+                .padding(5),
+        );
+    }
+
+    header_icons = header_icons.push(
+        iced::widget::button(icon::icon(icon::REFRESH).size(20)) // Refresh Icon (slightly larger)
+            .style(iced::widget::button::secondary)
+            .padding(6)
+            .on_press(Message::Refresh),
+    );
+
+    let search_input = iced::widget::text_input("Search...", &app.search_value)
+        .on_input(Message::SearchChanged)
+        .padding(5)
+        .size(16);
+
+    // --- EXPORT LOGIC ---
+    let mut export_ui: Element<'_, Message> = row![].into();
+
+    if app.active_cal_href.as_deref() == Some(LOCAL_CALENDAR_HREF) {
+        let targets: Vec<_> = app
+            .calendars
+            .iter()
+            .filter(|c| c.href != LOCAL_CALENDAR_HREF && !app.disabled_calendars.contains(&c.href))
+            .collect();
+
+        if !targets.is_empty() {
+            let mut row = row![
+                text("Export to:")
+                    .size(14)
+                    .color(Color::from_rgb(0.5, 0.5, 0.5))
+            ]
+            .spacing(5)
+            .align_y(iced::Alignment::Center);
+
+            for cal in targets {
+                row = row.push(
+                    iced::widget::button(text(&cal.name).size(12))
+                        .style(iced::widget::button::secondary)
+                        .padding(5)
+                        .on_press(Message::MigrateLocalTo(cal.href.clone())),
+                );
+            }
+            export_ui = row.into();
+        }
+    }
+
+    // --- ASSEMBLE HEADER ---
+    let header = row![
+        iced::widget::column![
+            row![
+                text(title_text).size(40),
+                header_icons // Icons next to title
+            ]
+            .spacing(15)
+            .align_y(iced::Alignment::Center),
+            export_ui
+        ]
+        .spacing(5),
+        iced::widget::horizontal_space(),
+        search_input.width(200)
+    ]
+    .align_y(iced::Alignment::Center);
+
+    let input_area = view_input_area(app);
+
+    // --- MAIN COLUMN ASSEMBLY ---
+    let mut main_col = iced::widget::column![header, input_area];
+
+    // --- ERROR / OFFLINE BANNER ---
+    if let Some(err) = &app.error_msg {
+        // Create a row with the text and a close button
+        let error_content = row![
+            text(err).color(Color::WHITE).size(14).width(Length::Fill),
+            iced::widget::button(icon::icon(icon::CROSS).size(14).color(Color::WHITE))
+                .style(iced::widget::button::text) // Transparent button style
+                .padding(2)
+                .on_press(Message::DismissError)
+        ]
+        .align_y(iced::Alignment::Center);
+
+        main_col = main_col.push(
+            container(error_content)
+                .width(Length::Fill)
+                .padding(5)
+                .style(|_| container::Style {
+                    background: Some(Color::from_rgb(0.8, 0.2, 0.2).into()),
+                    ..Default::default()
+                }),
+        );
+    }
+
+    let tasks_view = iced::widget::column(
+        app.tasks
+            .iter()
+            .enumerate()
+            .map(|(real_index, task)| view_task_row(app, real_index, task))
+            .collect::<Vec<_>>(),
+    )
+    .spacing(1);
+
+    // ATTACH ID HERE
+    main_col = main_col.push(
+        scrollable(tasks_view)
+            .height(Length::Fill)
+            .id(app.scrollable_id.clone()),
+    );
+
+    container(main_col.spacing(20).padding(20)).into()
+}
+
+fn view_input_area(app: &GuiApp) -> Element<'_, Message> {
+    let input_placeholder = if app.editing_uid.is_some() {
+        "Edit Title...".to_string()
+    } else if let Some(parent_uid) = &app.creating_child_of {
+        let parent_name = app
+            .store
+            .get_summary(parent_uid)
+            .unwrap_or("Parent".to_string());
+        format!("New Child of '{}'...", parent_name)
+    } else {
+        // Show which calendar we are writing to
+        let target_name = app
+            .calendars
+            .iter()
+            .find(|c| Some(&c.href) == app.active_cal_href.as_ref())
+            .map(|c| c.name.as_str())
+            .unwrap_or("Default");
+
+        format!(
+            "Add task to {} (e.g. Buy cat food !1 @weekly #groceries ~30m)",
+            target_name
+        )
+    };
+
+    // 1. Main Text Input
+    let input_title = iced::widget::text_input(&input_placeholder, &app.input_value)
+        .on_input(Message::InputChanged)
+        .on_submit(Message::SubmitTask)
+        .padding(10)
+        .size(20);
+
+    // 3. Layout Construction
+    if app.editing_uid.is_some() {
+        let input_desc = iced::widget::text_editor(&app.description_value)
+            .placeholder("Notes...")
+            .on_action(Message::DescriptionChanged)
+            .padding(10)
+            .height(Length::Fixed(100.0)); // Give it some height
+
+        let cancel_btn = iced::widget::button(text("Cancel").size(16))
+            .style(iced::widget::button::secondary)
+            .on_press(Message::CancelEdit);
+
+        let save_btn = iced::widget::button(text("Save").size(16))
+            .style(iced::widget::button::primary)
+            .on_press(Message::SubmitTask);
+
+        // 1. Top Bar: Label + Save/Cancel (Always clean, never blocked)
+        let top_bar = row![
+            text("Editing")
+                .size(14)
+                .color(Color::from_rgb(0.7, 0.7, 1.0)),
+            iced::widget::horizontal_space(),
+            cancel_btn,
+            save_btn
+        ]
+        .align_y(iced::Alignment::Center)
+        .spacing(10);
+
+        // 2. Move Section (Conditional, Filtered, Scrollable)
+        let mut move_element: Element<'_, Message> = row![].into();
+
+        if let Some(edit_uid) = &app.editing_uid
+            && let Some(task) = app.tasks.iter().find(|t| t.uid == *edit_uid)
+        {
+            // Filter: Exclude current calendar AND hidden calendars
+            let targets: Vec<_> = app
+                .calendars
+                .iter()
+                .filter(|c| {
+                    c.href != task.calendar_href && !app.disabled_calendars.contains(&c.href)
+                })
+                .collect();
+
+            if !targets.is_empty() {
+                let label = text("Move to:")
+                    .size(12)
+                    .color(Color::from_rgb(0.6, 0.6, 0.6));
+
+                let mut btn_row = row![].spacing(5);
+                for cal in targets {
+                    btn_row = btn_row.push(
+                        iced::widget::button(text(&cal.name).size(12))
+                            .style(iced::widget::button::secondary)
+                            .padding(5)
+                            .on_press(Message::MoveTask(task.uid.clone(), cal.href.clone())),
+                    );
+                }
+
+                move_element = row![
+                    label,
+                    scrollable(btn_row).height(30) // Constrain height to prevent layout jumps
+                ]
+                .spacing(10)
+                .align_y(iced::Alignment::Center)
+                .into();
+            }
+        }
+
+        // 3. Assemble Layout
+        iced::widget::column![top_bar, input_title, input_desc, move_element]
+            .spacing(10)
+            .into()
+    } else {
+        iced::widget::column![input_title].spacing(5).into()
+    }
+}

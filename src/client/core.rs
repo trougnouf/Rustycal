@@ -1,5 +1,7 @@
-// File: ./src/client.rs
+// File: ./src/client/core.rs
+// Contains the main client logic
 use crate::cache::Cache;
+use crate::client::cert::NoVerifier;
 use crate::config::Config;
 use crate::journal::{Action, Journal};
 use crate::model::{CalendarListEntry, Task, TaskStatus};
@@ -46,7 +48,7 @@ fn strip_host(href: &str) -> String {
 
 #[derive(Clone, Debug)]
 pub struct RustyClient {
-    client: Option<CalDavClient<HttpsClient>>,
+    pub client: Option<CalDavClient<HttpsClient>>,
 }
 
 impl RustyClient {
@@ -693,47 +695,5 @@ impl RustyClient {
         } else {
             Err(format!("MOVE failed: {}", parts.status))
         }
-    }
-}
-
-#[derive(Debug)]
-struct NoVerifier;
-impl rustls::client::danger::ServerCertVerifier for NoVerifier {
-    fn verify_server_cert(
-        &self,
-        _: &rustls::pki_types::CertificateDer<'_>,
-        _: &[rustls::pki_types::CertificateDer<'_>],
-        _: &rustls::pki_types::ServerName<'_>,
-        _: &[u8],
-        _: rustls::pki_types::UnixTime,
-    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
-        Ok(rustls::client::danger::ServerCertVerified::assertion())
-    }
-    fn verify_tls12_signature(
-        &self,
-        _: &[u8],
-        _: &rustls::pki_types::CertificateDer<'_>,
-        _: &rustls::DigitallySignedStruct,
-    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
-    }
-    fn verify_tls13_signature(
-        &self,
-        _: &[u8],
-        _: &rustls::pki_types::CertificateDer<'_>,
-        _: &rustls::DigitallySignedStruct,
-    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
-        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
-    }
-    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
-        use rustls::SignatureScheme::*;
-        vec![
-            RSA_PKCS1_SHA256,
-            RSA_PKCS1_SHA384,
-            RSA_PKCS1_SHA512,
-            ECDSA_NISTP256_SHA256,
-            RSA_PSS_SHA256,
-            ED25519,
-        ]
     }
 }
