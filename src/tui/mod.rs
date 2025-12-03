@@ -555,6 +555,7 @@ pub async fn run() -> Result<()> {
                                 });
                                 if let Some(href) = target_href {
                                     let mut task = Task::new(&summary, &app_state.tag_aliases);
+                                    let new_uid = task.uid.clone(); // Capture UID for jumping
                                     task.calendar_href = href.clone();
 
                                     // PARENT LOGIC
@@ -566,6 +567,14 @@ pub async fn run() -> Result<()> {
                                         list.push(task.clone());
                                     }
                                     app_state.refresh_filtered_view();
+
+                                    // JUMP TO NEW TASK
+                                    if let Some(idx) =
+                                        app_state.tasks.iter().position(|t| t.uid == new_uid)
+                                    {
+                                        app_state.list_state.select(Some(idx));
+                                    }
+
                                     let _ = action_tx.send(Action::CreateTask(task)).await;
                                 }
                                 app_state.mode = InputMode::Normal;

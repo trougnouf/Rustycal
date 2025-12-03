@@ -1,3 +1,4 @@
+// File: ./src/gui/mod.rs
 pub mod icon;
 pub mod message;
 pub mod state;
@@ -14,11 +15,12 @@ use crate::storage::{LOCAL_CALENDAR_HREF, LOCAL_CALENDAR_NAME};
 use crate::journal::Journal;
 
 use chrono::{Duration, Utc};
+use iced::widget::scrollable;
 use iced::{Element, Task, Theme, font, window}; // Added font
 use message::Message;
 use state::{AppState, GuiApp, SidebarMode};
 use std::sync::OnceLock;
-use tokio::runtime::Runtime;
+use tokio::runtime::Runtime; // Import for scroll_to
 
 static TOKIO_RUNTIME: OnceLock<Runtime> = OnceLock::new();
 
@@ -654,11 +656,33 @@ impl GuiApp {
                             self.refresh_filtered_tasks();
                             self.input_value.clear();
 
+                            // JUMP TO TASK using SNAP_TO
+                            // Calculate approximate position (index / count)
+                            let len = self.tasks.len().max(1) as f32;
+                            let idx = self
+                                .tasks
+                                .iter()
+                                .position(|t| t.uid == new_task.uid)
+                                .unwrap_or(0) as f32;
+                            let fraction = idx / len;
+
+                            // Use struct initialization for RelativeOffset
+                            let scroll_cmd = scrollable::snap_to(
+                                self.scrollable_id.clone(),
+                                scrollable::RelativeOffset {
+                                    x: 0.0,
+                                    y: fraction,
+                                },
+                            );
+
                             if let Some(client) = &self.client {
-                                return Task::perform(
-                                    async_create_wrapper(client.clone(), new_task),
-                                    Message::SyncSaved,
-                                );
+                                return Task::batch(vec![
+                                    Task::perform(
+                                        async_create_wrapper(client.clone(), new_task),
+                                        Message::SyncSaved,
+                                    ),
+                                    scroll_cmd,
+                                ]);
                             }
                         } else {
                             self.error_msg =

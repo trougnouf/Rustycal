@@ -2,7 +2,7 @@
 use crate::client::RustyClient;
 use crate::model::{CalendarListEntry, Task as TodoTask};
 use crate::store::TaskStore;
-use iced::widget::text_editor; // Import text_editor
+use iced::widget::{scrollable, text_editor}; // Import text_editor
 use std::collections::{HashMap, HashSet};
 
 #[derive(Default, PartialEq, Clone, Copy, Debug)]
@@ -74,6 +74,7 @@ pub struct GuiApp {
     pub ob_default_cal: Option<String>,
     pub ob_sort_months_input: String,
     pub ob_insecure: bool,
+    pub scrollable_id: scrollable::Id,
 }
 
 impl Default for GuiApp {
@@ -121,6 +122,7 @@ impl Default for GuiApp {
             ob_pass: String::new(),
             ob_default_cal: None,
             ob_insecure: false, // Default to Secure
+            scrollable_id: scrollable::Id::unique(),
         }
     }
 }

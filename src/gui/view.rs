@@ -1,4 +1,3 @@
-// File: ./src/gui/view.rs
 use crate::gui::icon;
 use crate::gui::message::Message;
 use crate::gui::state::{AppState, GuiApp, SidebarMode};
@@ -458,7 +457,12 @@ fn view_main_content(app: &GuiApp) -> Element<'_, Message> {
     )
     .spacing(1);
 
-    main_col = main_col.push(scrollable(tasks_view).height(Length::Fill));
+    // ATTACH ID HERE
+    main_col = main_col.push(
+        scrollable(tasks_view)
+            .height(Length::Fill)
+            .id(app.scrollable_id.clone()),
+    );
 
     container(main_col.spacing(20).padding(20).max_width(800)).into()
 }
@@ -567,7 +571,7 @@ fn view_input_area(app: &GuiApp) -> Element<'_, Message> {
             .spacing(10)
             .into()
     } else {
-        column![input_title,].spacing(5).into()
+        column![input_title].spacing(5).into()
     }
 }
 
@@ -708,21 +712,19 @@ fn view_task_row<'a>(app: &'a GuiApp, index: usize, task: &'a TodoTask) -> Eleme
 
     if let Some(yanked) = &app.yanked_uid {
         if *yanked != task.uid {
-            // OTHER TASKS: Show Block / Link Child
             actions = actions.push(
-                button(icon::icon(icon::BLOCKED).size(14)) // Icon Block
+                button(icon::icon(icon::BLOCKED).size(14))
                     .style(button::secondary)
                     .padding(4)
                     .on_press(Message::AddDependency(task.uid.clone())),
             );
             actions = actions.push(
-                button(icon::icon(icon::CHILD).size(14)) // Icon Child (Existing)
+                button(icon::icon(icon::CHILD).size(14))
                     .style(button::secondary)
                     .padding(4)
                     .on_press(Message::MakeChild(task.uid.clone())),
             );
         } else {
-            // YANKED TASK (Parent): Show Unlink + Create Child
             actions = actions.push(
                 button(icon::icon(icon::UNLINK).size(14))
                     .style(button::primary)
@@ -957,6 +959,9 @@ fn view_task_row<'a>(app: &'a GuiApp, index: usize, task: &'a TodoTask) -> Eleme
         left: 0.0,
     });
 
+    // GENERATE ID
+    let row_id = iced::widget::container::Id::new(task.uid.clone());
+
     if is_expanded {
         let mut details_col = column![].spacing(5);
 
@@ -969,7 +974,7 @@ fn view_task_row<'a>(app: &'a GuiApp, index: usize, task: &'a TodoTask) -> Eleme
             );
         }
 
-        // 2. Parent (Show parent and allow detaching)
+        // 2. Parent (NEW: Show parent and allow detaching)
         if let Some(p_uid) = &task.parent_uid {
             let p_name = app
                 .store
@@ -1061,9 +1066,10 @@ fn view_task_row<'a>(app: &'a GuiApp, index: usize, task: &'a TodoTask) -> Eleme
         ];
         container(column![padded_row, desc_row].spacing(5))
             .padding(5)
+            .id(row_id)
             .into()
     } else {
-        padded_row.into()
+        padded_row.id(row_id).into()
     }
 }
 
