@@ -94,4 +94,7 @@ pub enum Message {
     FontLoaded(Result<(), String>),
     DismissError,
     ToggleAllCalendars(bool),
+
+    // Tab Navigation
+    TabPressed(bool), // true if Shift is held
 }

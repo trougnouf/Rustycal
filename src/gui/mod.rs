@@ -2,7 +2,7 @@
 pub mod icon;
 pub mod message;
 pub mod state;
-pub mod view; // Register the new module
+pub mod view;
 
 use crate::cache::Cache;
 use crate::client::RustyClient;
@@ -16,11 +16,11 @@ use crate::journal::Journal;
 
 use chrono::{Duration, Utc};
 use iced::widget::scrollable;
-use iced::{Element, Task, Theme, font, window}; // Added font
+use iced::{Element, Subscription, Task, Theme, font, window};
 use message::Message;
 use state::{AppState, GuiApp, SidebarMode};
 use std::sync::OnceLock;
-use tokio::runtime::Runtime; // Import for scroll_to
+use tokio::runtime::Runtime;
 
 static TOKIO_RUNTIME: OnceLock<Runtime> = OnceLock::new();
 
@@ -35,6 +35,7 @@ pub fn run() -> iced::Result {
         GuiApp::update,
         GuiApp::view,
     )
+    .subscription(GuiApp::subscription) // Register the subscription
     .theme(GuiApp::theme)
     .window(window::Settings {
         platform_specific: window::settings::PlatformSpecific {
@@ -70,6 +71,22 @@ impl GuiApp {
 
     fn theme(&self) -> Theme {
         Theme::Dark
+    }
+
+    // Listen for Tab keys in settings/onboarding
+    fn subscription(&self) -> Subscription<Message> {
+        use iced::keyboard::{self, key};
+
+        if matches!(self.state, AppState::Onboarding | AppState::Settings) {
+            return keyboard::on_key_press(|k, modifiers| {
+                if k == key::Key::Named(key::Named::Tab) {
+                    Some(Message::TabPressed(modifiers.shift()))
+                } else {
+                    None
+                }
+            });
+        }
+        Subscription::none()
     }
 
     fn save_config(&self) {
@@ -118,6 +135,15 @@ impl GuiApp {
 
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            // Handle Focus Cycling
+            Message::TabPressed(shift_held) => {
+                if shift_held {
+                    iced::widget::focus_previous()
+                } else {
+                    iced::widget::focus_next()
+                }
+            }
+
             Message::FontLoaded(_) => Task::none(), // Just consume the event
             Message::ConfigLoaded(Ok(config)) => {
                 self.hidden_calendars = config.hidden_calendars.clone().into_iter().collect();
