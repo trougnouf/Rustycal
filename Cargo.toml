@@ -1,6 +1,6 @@
 [package]
 name = "cfait"
-version = "0.2.6"
+version = "0.2.5"
 edition = "2024"
 description = "A simple, elegant, and lightweight CalDAV task manager (TUI & GUI)"
 license = "GPL-3.0"
@@ -8,7 +8,7 @@ default-run = "cfait" # Default to TUI when running 'cargo run'
 repository = "https://codeberg.org/trougnouf/cfait"
 homepage = "https://codeberg.org/trougnouf/cfait"
 readme = "README.md"
-keywords = ["caldav", "todo", "task", "tui", "gui", "productivity"]
+keywords = ["caldav", "todo", "productivity", "tui", "gui"]
 categories = ["command-line-utilities", "gui", "network-programming", "database"]
 exclude = [
     # Git and CI related files
