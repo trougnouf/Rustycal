@@ -1,4 +1,5 @@
 // File: ./src/gui/view/mod.rs
+pub mod help;
 pub mod settings;
 pub mod sidebar;
 pub mod task_row;
@@ -6,6 +7,7 @@ pub mod task_row;
 use crate::gui::icon;
 use crate::gui::message::Message;
 use crate::gui::state::{AppState, GuiApp, SidebarMode};
+use crate::gui::view::help::view_help;
 use crate::gui::view::settings::view_settings;
 use crate::gui::view::sidebar::{view_sidebar_calendars, view_sidebar_categories};
 use crate::gui::view::task_row::view_task_row;
@@ -23,6 +25,7 @@ pub fn root_view(app: &GuiApp) -> Element<'_, Message> {
             .center_y(Length::Fill)
             .into(),
         AppState::Onboarding | AppState::Settings => view_settings(app),
+        AppState::Help => view_help(),
         AppState::Active => {
             let layout = row![
                 view_sidebar(app),
@@ -44,7 +47,7 @@ fn view_sidebar(app: &GuiApp) -> Element<'_, Message> {
     let btn_cals = iced::widget::button(
         container(text("Calendars").size(14))
             .width(Length::Fill)
-            .align_x(iced::alignment::Horizontal::Center),
+            .center_x(Length::Fill),
     )
     .padding(5)
     .width(Length::Fill)
@@ -58,7 +61,7 @@ fn view_sidebar(app: &GuiApp) -> Element<'_, Message> {
     let btn_tags = iced::widget::button(
         container(text("Tags").size(14))
             .width(Length::Fill)
-            .align_x(iced::alignment::Horizontal::Center),
+            .center_x(Length::Fill),
     )
     .padding(5)
     .width(Length::Fill)
@@ -77,21 +80,40 @@ fn view_sidebar(app: &GuiApp) -> Element<'_, Message> {
         SidebarMode::Categories => view_sidebar_categories(app),
     };
 
-    // 3. Footer (Settings)
-    let settings_btn =
-        iced::widget::button(row![text("Settings").size(16)].align_y(iced::Alignment::Center))
-            .padding(10)
-            .width(Length::Fill)
-            .style(iced::widget::button::secondary)
-            .on_press(Message::OpenSettings);
+    // 3. Footer (Settings + Help)
+    // Constrained height to prevent expansion
+    let footer = row![
+        iced::widget::button(
+            container(icon::icon(icon::SETTINGS_GEAR).size(20))
+                .width(Length::Fill)
+                .center_x(Length::Fill)
+                .center_y(Length::Fill)
+        )
+        .padding(0) // Reduced padding inside button
+        .height(Length::Fixed(40.0)) // Explicit fixed height
+        .width(Length::Fill)
+        .style(iced::widget::button::secondary)
+        .on_press(Message::OpenSettings),
+        iced::widget::button(
+            container(icon::icon(icon::HELP_RHOMBUS).size(20))
+                .center_x(Length::Fill)
+                .center_y(Length::Fill)
+        )
+        .padding(0)
+        .height(Length::Fixed(40.0)) // Explicit fixed height
+        .width(Length::Fixed(50.0)) // Square-ish
+        .style(iced::widget::button::secondary)
+        .on_press(Message::OpenHelp)
+    ]
+    .spacing(5);
 
     let sidebar_inner =
-        iced::widget::column![tabs, scrollable(content).height(Length::Fill), settings_btn]
+        iced::widget::column![tabs, scrollable(content).height(Length::Fill), footer]
             .spacing(10)
             .padding(10);
 
     container(sidebar_inner)
-        .width(200)
+        .width(220)
         .height(Length::Fill)
         .style(|theme: &Theme| {
             let palette = theme.extended_palette();
@@ -120,14 +142,13 @@ fn view_main_content(app: &GuiApp) -> Element<'_, Message> {
             .unwrap_or("Calendar".to_string())
     };
 
-    // --- HEADER ICONS (Unsynced + Refresh) ---
     let mut header_icons = row![].spacing(10).align_y(iced::Alignment::Center);
 
     if app.unsynced_changes {
         header_icons = header_icons.push(
             container(text("Unsynced").size(12).color(Color::WHITE))
                 .style(|_| container::Style {
-                    background: Some(Color::from_rgb(0.8, 0.5, 0.0).into()), // Orange
+                    background: Some(Color::from_rgb(0.8, 0.5, 0.0).into()),
                     border: iced::Border {
                         radius: 4.0.into(),
                         ..Default::default()
@@ -139,7 +160,7 @@ fn view_main_content(app: &GuiApp) -> Element<'_, Message> {
     }
 
     header_icons = header_icons.push(
-        iced::widget::button(icon::icon(icon::REFRESH).size(20)) // Refresh Icon (slightly larger)
+        iced::widget::button(icon::icon(icon::REFRESH).size(20))
             .style(iced::widget::button::secondary)
             .padding(6)
             .on_press(Message::Refresh),
@@ -150,7 +171,6 @@ fn view_main_content(app: &GuiApp) -> Element<'_, Message> {
         .padding(5)
         .size(16);
 
-    // --- EXPORT LOGIC ---
     let mut export_ui: Element<'_, Message> = row![].into();
 
     if app.active_cal_href.as_deref() == Some(LOCAL_CALENDAR_HREF) {
@@ -181,15 +201,11 @@ fn view_main_content(app: &GuiApp) -> Element<'_, Message> {
         }
     }
 
-    // --- ASSEMBLE HEADER ---
     let header = row![
         iced::widget::column![
-            row![
-                text(title_text).size(40),
-                header_icons // Icons next to title
-            ]
-            .spacing(15)
-            .align_y(iced::Alignment::Center),
+            row![text(title_text).size(40), header_icons]
+                .spacing(15)
+                .align_y(iced::Alignment::Center),
             export_ui
         ]
         .spacing(5),
@@ -200,16 +216,13 @@ fn view_main_content(app: &GuiApp) -> Element<'_, Message> {
 
     let input_area = view_input_area(app);
 
-    // --- MAIN COLUMN ASSEMBLY ---
     let mut main_col = iced::widget::column![header, input_area];
 
-    // --- ERROR / OFFLINE BANNER ---
     if let Some(err) = &app.error_msg {
-        // Create a row with the text and a close button
         let error_content = row![
             text(err).color(Color::WHITE).size(14).width(Length::Fill),
             iced::widget::button(icon::icon(icon::CROSS).size(14).color(Color::WHITE))
-                .style(iced::widget::button::text) // Transparent button style
+                .style(iced::widget::button::text)
                 .padding(2)
                 .on_press(Message::DismissError)
         ]
@@ -235,7 +248,6 @@ fn view_main_content(app: &GuiApp) -> Element<'_, Message> {
     )
     .spacing(1);
 
-    // ATTACH ID HERE
     main_col = main_col.push(
         scrollable(tasks_view)
             .height(Length::Fill)
@@ -255,7 +267,6 @@ fn view_input_area(app: &GuiApp) -> Element<'_, Message> {
             .unwrap_or("Parent".to_string());
         format!("New Child of '{}'...", parent_name)
     } else {
-        // Show which calendar we are writing to
         let target_name = app
             .calendars
             .iter()
@@ -264,25 +275,23 @@ fn view_input_area(app: &GuiApp) -> Element<'_, Message> {
             .unwrap_or("Default");
 
         format!(
-            "Add task to {} (e.g. Buy cat food !1 @weekly #groceries ~30m)",
+            "Add task to {} (e.g. Buy cat food !1 @tomorrow #groceries ~30m)",
             target_name
         )
     };
 
-    // 1. Main Text Input
     let input_title = iced::widget::text_input(&input_placeholder, &app.input_value)
         .on_input(Message::InputChanged)
         .on_submit(Message::SubmitTask)
         .padding(10)
         .size(20);
 
-    // 3. Layout Construction
     if app.editing_uid.is_some() {
         let input_desc = iced::widget::text_editor(&app.description_value)
             .placeholder("Notes...")
             .on_action(Message::DescriptionChanged)
             .padding(10)
-            .height(Length::Fixed(100.0)); // Give it some height
+            .height(Length::Fixed(100.0));
 
         let cancel_btn = iced::widget::button(text("Cancel").size(16))
             .style(iced::widget::button::secondary)
@@ -292,7 +301,6 @@ fn view_input_area(app: &GuiApp) -> Element<'_, Message> {
             .style(iced::widget::button::primary)
             .on_press(Message::SubmitTask);
 
-        // 1. Top Bar: Label + Save/Cancel (Always clean, never blocked)
         let top_bar = row![
             text("Editing")
                 .size(14)
@@ -304,13 +312,11 @@ fn view_input_area(app: &GuiApp) -> Element<'_, Message> {
         .align_y(iced::Alignment::Center)
         .spacing(10);
 
-        // 2. Move Section (Conditional, Filtered, Scrollable)
         let mut move_element: Element<'_, Message> = row![].into();
 
         if let Some(edit_uid) = &app.editing_uid
             && let Some(task) = app.tasks.iter().find(|t| t.uid == *edit_uid)
         {
-            // Filter: Exclude current calendar AND hidden calendars
             let targets: Vec<_> = app
                 .calendars
                 .iter()
@@ -334,17 +340,13 @@ fn view_input_area(app: &GuiApp) -> Element<'_, Message> {
                     );
                 }
 
-                move_element = row![
-                    label,
-                    scrollable(btn_row).height(30) // Constrain height to prevent layout jumps
-                ]
-                .spacing(10)
-                .align_y(iced::Alignment::Center)
-                .into();
+                move_element = row![label, scrollable(btn_row).height(30)]
+                    .spacing(10)
+                    .align_y(iced::Alignment::Center)
+                    .into();
             }
         }
 
-        // 3. Assemble Layout
         iced::widget::column![top_bar, input_title, input_desc, move_element]
             .spacing(10)
             .into()

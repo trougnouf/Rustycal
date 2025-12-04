@@ -2,7 +2,7 @@
 use crate::client::RustyClient;
 use crate::model::{CalendarListEntry, Task as TodoTask};
 use crate::store::TaskStore;
-use iced::widget::{scrollable, text_editor}; // Import text_editor
+use iced::widget::{scrollable, text_editor};
 use std::collections::{HashMap, HashSet};
 
 #[derive(Default, PartialEq, Clone, Copy, Debug)]
@@ -12,6 +12,7 @@ pub enum AppState {
     Onboarding,
     Active,
     Settings,
+    Help,
 }
 
 #[derive(Default, PartialEq, Clone, Copy, Debug)]
@@ -23,8 +24,7 @@ pub enum SidebarMode {
 
 pub struct GuiApp {
     pub state: AppState,
-
-    // Data
+    // ... [Rest of struct fields]
     pub store: TaskStore,
     pub tasks: Vec<TodoTask>,
     pub calendars: Vec<CalendarListEntry>,
@@ -105,7 +105,7 @@ impl Default for GuiApp {
             filter_include_unset_duration: true,
 
             input_value: String::new(),
-            description_value: text_editor::Content::new(), // Initialized empty
+            description_value: text_editor::Content::new(),
             search_value: String::new(),
             editing_uid: None,
             creating_child_of: None,
@@ -121,7 +121,7 @@ impl Default for GuiApp {
             ob_user: String::new(),
             ob_pass: String::new(),
             ob_default_cal: None,
-            ob_insecure: false, // Default to Secure
+            ob_insecure: false,
             scrollable_id: scrollable::Id::unique(),
         }
     }

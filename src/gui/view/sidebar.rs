@@ -1,5 +1,4 @@
 // File: ./src/gui/view/sidebar.rs
-// Sidebar logic extracted from view.rs
 use crate::gui::icon;
 use crate::gui::message::Message;
 use crate::gui::state::GuiApp;
@@ -8,7 +7,6 @@ use iced::widget::{Rule, button, checkbox, column, container, row, text, toggler
 use iced::{Color, Element, Length};
 
 pub fn view_sidebar_calendars(app: &GuiApp) -> Element<'_, Message> {
-    // 1. Calculate "Select All" state
     let are_all_visible = app
         .calendars
         .iter()
@@ -17,19 +15,18 @@ pub fn view_sidebar_calendars(app: &GuiApp) -> Element<'_, Message> {
 
     let toggle_all = toggler(are_all_visible)
         .label("Show All")
-        .text_size(12) // Tiny bit smaller
+        .text_size(12)
         .text_alignment(iced::alignment::Horizontal::Left)
         .spacing(10)
         .width(Length::Fill)
         .on_toggle(Message::ToggleAllCalendars);
 
-    // Wrap in container for padding
     let toggle_container = container(toggle_all).padding(5);
 
     let list = column(
         app.calendars
             .iter()
-            .filter(|c| !app.disabled_calendars.contains(&c.href)) // Filter directly here
+            .filter(|c| !app.disabled_calendars.contains(&c.href))
             .map(|cal| {
                 let is_visible = !app.hidden_calendars.contains(&cal.href);
                 let is_target = app.active_cal_href.as_ref() == Some(&cal.href);
@@ -53,7 +50,7 @@ pub fn view_sidebar_calendars(app: &GuiApp) -> Element<'_, Message> {
                     .padding(10)
                     .on_press(Message::IsolateCalendar(cal.href.clone()));
 
-                row![check, label, focus_btn] // Added focus_btn
+                row![check, label, focus_btn]
                     .spacing(2)
                     .align_y(iced::Alignment::Center)
                     .into()
@@ -66,7 +63,6 @@ pub fn view_sidebar_calendars(app: &GuiApp) -> Element<'_, Message> {
     column![toggle_container, list].spacing(5).into()
 }
 
-// Helper struct for duration logic
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DurationOpt(Option<u32>, String);
 
@@ -76,7 +72,6 @@ impl std::fmt::Display for DurationOpt {
     }
 }
 
-// Formatting Helper
 fn format_mins(m: u32) -> String {
     if m >= 525600 {
         format!("{}y", m / 525600)
@@ -94,7 +89,6 @@ fn format_mins(m: u32) -> String {
 }
 
 pub fn view_sidebar_categories(app: &GuiApp) -> Element<'_, Message> {
-    // 1. Existing Category Logic
     let all_cats = app.store.get_all_categories(
         app.hide_completed,
         app.hide_fully_completed_tags,
@@ -102,7 +96,6 @@ pub fn view_sidebar_categories(app: &GuiApp) -> Element<'_, Message> {
         &app.hidden_calendars,
     );
 
-    // Disable Clear button if nothing is selected
     let has_selection = !app.selected_categories.is_empty();
     let clear_btn = if has_selection {
         button(icon::icon(icon::CLEAR_ALL).size(16))
@@ -110,13 +103,15 @@ pub fn view_sidebar_categories(app: &GuiApp) -> Element<'_, Message> {
             .padding(5)
             .on_press(Message::ClearAllTags)
     } else {
-        // Disabled style: Gray text, no action
-        button(icon::icon(icon::CLEAR_ALL).size(16).style(|_| text::Style {
-            color: Some(Color::from_rgb(0.5, 0.5, 0.5)),
-        }))
+        button(
+            icon::icon(icon::CLEAR_ALL)
+                .size(16)
+                .style(move |_| text::Style {
+                    color: Some(Color::from_rgb(0.5, 0.5, 0.5)),
+                }),
+        )
         .style(button::text)
         .padding(5)
-        // No on_press
     };
 
     let logic_text = if app.match_all_categories {
@@ -129,21 +124,13 @@ pub fn view_sidebar_categories(app: &GuiApp) -> Element<'_, Message> {
         .padding(5)
         .on_press(Message::CategoryMatchModeChanged(!app.match_all_categories));
 
-    let header = row![
-        clear_btn,
-        iced::widget::horizontal_space(), // Make the label flexible so it doesn't force the row to wrap
-        // text("Filter Tags")
-        //     .size(14)
-        //     .color(Color::from_rgb(0.7, 0.7, 0.7))
-        //     .width(Length::Fill),
-        logic_btn
-    ]
-    .spacing(5)
-    .align_y(iced::Alignment::Center)
-    .padding(iced::Padding {
-        right: 14.0, // Increased to avoid scrollbar collision
-        ..Default::default()
-    });
+    let header = row![clear_btn, iced::widget::horizontal_space(), logic_btn]
+        .spacing(5)
+        .align_y(iced::Alignment::Center)
+        .padding(iced::Padding {
+            right: 14.0,
+            ..Default::default()
+        });
 
     let tags_list: Element<'_, Message> = if all_cats.is_empty() {
         column![
@@ -179,9 +166,7 @@ pub fn view_sidebar_categories(app: &GuiApp) -> Element<'_, Message> {
         column![header, list].spacing(10).into()
     };
 
-    // 2. Dynamic Duration Filter Section
     let mut dur_set = std::collections::HashSet::new();
-    // Scan ALL tasks
     for tasks in app.store.calendars.values() {
         for t in tasks {
             if let Some(d) = t.estimated_duration {
@@ -192,13 +177,11 @@ pub fn view_sidebar_categories(app: &GuiApp) -> Element<'_, Message> {
     let mut sorted_durs: Vec<u32> = dur_set.into_iter().collect();
     sorted_durs.sort();
 
-    // Build Options
     let mut opts = vec![DurationOpt(None, "Any".to_string())];
     for d in sorted_durs {
         opts.push(DurationOpt(Some(d), format_mins(d)));
     }
 
-    // Determine Current Selection (Robust matching)
     let current_min = opts
         .iter()
         .find(|o| o.0 == app.filter_min_duration)
@@ -247,6 +230,5 @@ pub fn view_sidebar_categories(app: &GuiApp) -> Element<'_, Message> {
         ..Default::default()
     });
 
-    // Combine Tag List + Duration Filters
     column![tags_list, dur_filters].spacing(10).into()
 }

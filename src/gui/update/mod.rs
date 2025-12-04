@@ -11,11 +11,9 @@ use iced::Task;
 
 pub fn update(app: &mut GuiApp, message: Message) -> Task<Message> {
     match message {
-        // Font loading is generic/global
         Message::FontLoaded(_) => Task::none(),
         Message::DeleteComplete(_) => Task::none(),
 
-        // Dispatch based on domain
         Message::ConfigLoaded(_)
         | Message::ObUrlChanged(_)
         | Message::ObUserChanged(_)
@@ -68,7 +66,9 @@ pub fn update(app: &mut GuiApp, message: Message) -> Task<Message> {
         | Message::SetMinDuration(_)
         | Message::SetMaxDuration(_)
         | Message::ToggleIncludeUnsetDuration(_)
-        | Message::ToggleDetails(_) => view::handle(app, message),
+        | Message::ToggleDetails(_)
+        | Message::OpenHelp
+        | Message::CloseHelp => view::handle(app, message),
 
         Message::Refresh
         | Message::Loaded(_)

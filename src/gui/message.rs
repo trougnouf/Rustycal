@@ -11,7 +11,7 @@ pub type LoadedResult = Result<
         Vec<CalendarListEntry>,
         Vec<TodoTask>,
         Option<String>,
-        Option<String>, // Optional Warning/Error Message
+        Option<String>,
     ),
     String,
 >;
@@ -22,15 +22,16 @@ pub enum Message {
     ObUserChanged(String),
     ObPassChanged(String),
     ObInsecureToggled(bool),
-    ToggleCalendarVisibility(String, bool), // (href, is_visible)
+    ToggleCalendarVisibility(String, bool),
     ToggleCalendarDisabled(String, bool),
     ObDefaultCalChanged(String),
     ObSubmit,
     OpenSettings,
     CancelSettings,
+    OpenHelp,
+    CloseHelp,
     InputChanged(String),
 
-    // CHANGED: Accepts text_editor::Action instead of String
     DescriptionChanged(text_editor::Action),
 
     SearchChanged(String),
@@ -52,8 +53,6 @@ pub enum Message {
     Refresh,
 
     SyncSaved(Result<TodoTask, String>),
-
-    // Box the large variant to satisfy clippy::large_enum_variant
     SyncToggleComplete(Box<Result<(TodoTask, Option<TodoTask>), String>>),
 
     TasksRefreshed(Result<(String, Vec<TodoTask>), String>),
@@ -63,7 +62,7 @@ pub enum Message {
     SelectCalendar(String),
     IsolateCalendar(String),
     CategoryToggled(String),
-    ClearAllTags, // <-- NEW
+    ClearAllTags,
     CategoryMatchModeChanged(bool),
     RefreshedAll(Result<Vec<(String, Vec<TodoTask>)>, String>),
 
@@ -82,20 +81,16 @@ pub enum Message {
     AliasValueInput(String),
     AddAlias,
     RemoveAlias(String),
-    // Triggered when user selects a target calendar
-    MoveTask(String, String), // (task_uid, target_calendar_href)
+    MoveTask(String, String),
 
-    // Triggered when the async move finishes
     TaskMoved(Result<TodoTask, String>),
     ObSubmitOffline,
-    MigrateLocalTo(String), // target_href
+    MigrateLocalTo(String),
 
-    // Result
     MigrationComplete(Result<usize, String>),
     FontLoaded(Result<(), String>),
     DismissError,
     ToggleAllCalendars(bool),
 
-    // Tab Navigation
-    TabPressed(bool), // true if Shift is held
+    TabPressed(bool),
 }

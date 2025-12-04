@@ -1,7 +1,7 @@
 // File: ./src/gui/update/view.rs
 use crate::gui::async_ops::*;
 use crate::gui::message::Message;
-use crate::gui::state::{GuiApp, SidebarMode};
+use crate::gui::state::{AppState, GuiApp, SidebarMode};
 use crate::gui::update::common::{refresh_filtered_tasks, save_config};
 use iced::Task;
 
@@ -169,6 +169,14 @@ pub fn handle(app: &mut GuiApp, message: Message) -> Task<Message> {
             } else {
                 app.expanded_tasks.insert(uid);
             }
+            Task::none()
+        }
+        Message::OpenHelp => {
+            app.state = AppState::Help;
+            Task::none()
+        }
+        Message::CloseHelp => {
+            app.state = AppState::Active;
             Task::none()
         }
         _ => Task::none(),
