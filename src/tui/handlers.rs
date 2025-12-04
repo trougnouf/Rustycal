@@ -614,33 +614,41 @@ pub async fn handle_key_event(
                 }
             }
             KeyCode::Char('*') => {
-                if state.active_focus == Focus::Sidebar
-                    && state.sidebar_mode == SidebarMode::Calendars
-                {
-                    let enabled_count = state
-                        .calendars
-                        .iter()
-                        .filter(|c| !state.disabled_calendars.contains(&c.href))
-                        .count();
+                if state.active_focus == Focus::Sidebar {
+                    match state.sidebar_mode {
+                        SidebarMode::Calendars => {
+                            let enabled_count = state
+                                .calendars
+                                .iter()
+                                .filter(|c| !state.disabled_calendars.contains(&c.href))
+                                .count();
 
-                    let visible_count = state
-                        .calendars
-                        .iter()
-                        .filter(|c| {
-                            !state.disabled_calendars.contains(&c.href)
-                                && !state.hidden_calendars.contains(&c.href)
-                        })
-                        .count();
+                            let visible_count = state
+                                .calendars
+                                .iter()
+                                .filter(|c| {
+                                    !state.disabled_calendars.contains(&c.href)
+                                        && !state.hidden_calendars.contains(&c.href)
+                                })
+                                .count();
 
-                    if visible_count == enabled_count {
-                        for cal in &state.calendars {
-                            if state.active_cal_href.as_ref() != Some(&cal.href) {
-                                state.hidden_calendars.insert(cal.href.clone());
+                            if visible_count == enabled_count {
+                                // If all are visible, hide everything except active
+                                for cal in &state.calendars {
+                                    if state.active_cal_href.as_ref() != Some(&cal.href) {
+                                        state.hidden_calendars.insert(cal.href.clone());
+                                    }
+                                }
+                            } else {
+                                // Otherwise show all
+                                state.hidden_calendars.clear();
+                                let _ = action_tx.send(Action::Refresh).await;
                             }
                         }
-                    } else {
-                        state.hidden_calendars.clear();
-                        let _ = action_tx.send(Action::Refresh).await;
+                        SidebarMode::Categories => {
+                            // Clear all selections (Show All)
+                            state.selected_categories.clear();
+                        }
                     }
                     state.refresh_filtered_view();
                 }
