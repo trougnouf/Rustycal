@@ -89,6 +89,8 @@ pub async fn handle_key_event(
             }
             KeyCode::Char(c) => state.enter_char(c),
             KeyCode::Backspace => state.delete_char(),
+            KeyCode::Left => state.move_cursor_left(),
+            KeyCode::Right => state.move_cursor_right(),
             _ => {}
         },
         InputMode::Editing => match key.code {
