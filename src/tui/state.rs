@@ -1,3 +1,4 @@
+// File: ./src/tui/state.rs
 use crate::model::{CalendarListEntry, Task};
 use crate::store::{FilterOptions, TaskStore};
 use crate::tui::action::SidebarMode;
@@ -207,6 +208,26 @@ impl AppState {
         new_cursor_pos.clamp(0, self.input_buffer.chars().count())
     }
 
+    // --- HELPER FOR SIDEBAR LENGTH ---
+    fn get_sidebar_len(&self) -> usize {
+        match self.sidebar_mode {
+            SidebarMode::Calendars => self
+                .calendars
+                .iter()
+                .filter(|c| !self.disabled_calendars.contains(&c.href))
+                .count(),
+            SidebarMode::Categories => self
+                .store
+                .get_all_categories(
+                    self.hide_completed,
+                    self.hide_fully_completed_tags,
+                    &self.selected_categories,
+                    &self.hidden_calendars,
+                )
+                .len(),
+        }
+    }
+
     // --- NAVIGATION ---
     pub fn next(&mut self) {
         match self.active_focus {
@@ -227,19 +248,7 @@ impl AppState {
                 self.list_state.select(Some(i));
             }
             Focus::Sidebar => {
-                // FIX: Pass visibility args to get correct length
-                let len = match self.sidebar_mode {
-                    SidebarMode::Calendars => self.calendars.len(),
-                    SidebarMode::Categories => self
-                        .store
-                        .get_all_categories(
-                            self.hide_completed,
-                            self.hide_fully_completed_tags,
-                            &self.selected_categories,
-                            &self.hidden_calendars,
-                        )
-                        .len(),
-                };
+                let len = self.get_sidebar_len();
                 if len == 0 {
                     return;
                 }
@@ -276,19 +285,7 @@ impl AppState {
                 self.list_state.select(Some(i));
             }
             Focus::Sidebar => {
-                // FIX: Pass visibility args to get correct length
-                let len = match self.sidebar_mode {
-                    SidebarMode::Calendars => self.calendars.len(),
-                    SidebarMode::Categories => self
-                        .store
-                        .get_all_categories(
-                            self.hide_completed,
-                            self.hide_fully_completed_tags,
-                            &self.selected_categories,
-                            &self.hidden_calendars,
-                        )
-                        .len(),
-                };
+                let len = self.get_sidebar_len();
                 if len == 0 {
                     return;
                 }
@@ -307,16 +304,38 @@ impl AppState {
         }
     }
     pub fn jump_forward(&mut self, step: usize) {
-        if self.active_focus == Focus::Main && !self.tasks.is_empty() {
-            let current = self.list_state.selected().unwrap_or(0);
-            self.list_state
-                .select(Some((current + step).min(self.tasks.len() - 1)));
+        match self.active_focus {
+            Focus::Main => {
+                if !self.tasks.is_empty() {
+                    let current = self.list_state.selected().unwrap_or(0);
+                    self.list_state
+                        .select(Some((current + step).min(self.tasks.len() - 1)));
+                }
+            }
+            Focus::Sidebar => {
+                let len = self.get_sidebar_len();
+                if len > 0 {
+                    let current = self.cal_state.selected().unwrap_or(0);
+                    self.cal_state.select(Some((current + step).min(len - 1)));
+                }
+            }
         }
     }
     pub fn jump_backward(&mut self, step: usize) {
-        if self.active_focus == Focus::Main && !self.tasks.is_empty() {
-            let current = self.list_state.selected().unwrap_or(0);
-            self.list_state.select(Some(current.saturating_sub(step)));
+        match self.active_focus {
+            Focus::Main => {
+                if !self.tasks.is_empty() {
+                    let current = self.list_state.selected().unwrap_or(0);
+                    self.list_state.select(Some(current.saturating_sub(step)));
+                }
+            }
+            Focus::Sidebar => {
+                let len = self.get_sidebar_len();
+                if len > 0 {
+                    let current = self.cal_state.selected().unwrap_or(0);
+                    self.cal_state.select(Some(current.saturating_sub(step)));
+                }
+            }
         }
     }
     pub fn toggle_focus(&mut self) {
@@ -359,7 +378,6 @@ impl AppState {
         self.move_selection_state.select(Some(i));
     }
     pub fn next_export_target(&mut self) {
-        // (Copy logic from next_move_target, replacing move_targets with export_targets)
         if self.export_targets.is_empty() {
             return;
         }
@@ -377,7 +395,6 @@ impl AppState {
     }
 
     pub fn previous_export_target(&mut self) {
-        // (Copy logic from previous_move_target)
         if self.export_targets.is_empty() {
             return;
         }
