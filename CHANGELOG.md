@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.2.6] - 2025-12-04
+
+### 🚀 Features
+
+- *(ui)* Display active task count next to each tag in GUI and TUI sidebars
+- *(core)* Implement Start Date (DTSTART) with smart input parsing, sorting, and recurrence compatibility
+- *(tui)* Implement PageUp/PageDown scrolling for sidebar lists
+- *(tui)* Re-use '*' keybinding to clear all selected tags in tags view
+- *(gui)* Add 'Clear All Tags' button to sidebar
+- *(GUI)* Add help screen, use icons for help and settings
+
+### 🐛 Bug Fixes
+
+- *(tui)* Enable cursor movement in task creation input field
+
+### 🚜 Refactor
+
+- *(gui)* Decompose monolithic update logic into domain-specific modules
+
+### 🎨 Styling
+
+- *(tui)* Improve highlight contrast and right-align tags for readability
+- Update logo (nerd-fonts cat -> Font Awesome, CC-BY-SA-4.0, license in LICENSES/nerd-fonts)
+- Cleanup new logo
 ## [0.2.5] - 2025-12-04
 
 ### 🚀 Features
@@ -18,6 +42,11 @@
 ### 🎨 Styling
 
 - *(GUI)* Allow main content area to expand with window width
+
+### ⚙️ Miscellaneous Tasks
+
+- *(release)* Update changelog and screenshots for v0.2.5
+- Release cfait version 0.2.5
 ## [0.2.4] - 2025-12-03
 
 ### 🚀 Features
