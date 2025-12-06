@@ -5,7 +5,7 @@ use crate::gui::state::GuiApp;
 use crate::model::Task as TodoTask;
 
 use iced::widget::{Space, button, column, container, row, scrollable, text};
-use iced::{Color, Element, Length};
+use iced::{Border, Color, Element, Length, Theme};
 
 pub fn view_task_row<'a>(
     app: &'a GuiApp,
@@ -29,6 +29,86 @@ pub fn view_task_row<'a>(
     // Further reduce per-depth indent so checkboxes start closer to the left
     let indent_size = if show_indent { task.depth * 12 } else { 0 };
     let indent = Space::new().width(Length::Fixed(indent_size as f32));
+
+    // --- CUSTOM STYLES ---
+
+    // Style for standard actions (Edit, Move, Priority, etc.)
+    // Idle: Transparent with light text
+    // Hover: Dark background with white text
+    let action_style = |theme: &Theme, status: button::Status| -> button::Style {
+        let palette = theme.extended_palette();
+        let base = button::Style {
+            background: Some(Color::TRANSPARENT.into()),
+            text_color: palette.background.weak.text,
+            border: Border::default(),
+            ..button::Style::default()
+        };
+
+        match status {
+            button::Status::Active => base,
+            button::Status::Hovered => button::Style {
+                background: Some(palette.background.weak.color.into()),
+                text_color: Color::WHITE,
+                border: Border {
+                    radius: 4.0.into(),
+                    ..Border::default()
+                },
+                ..base
+            },
+            button::Status::Pressed => button::Style {
+                background: Some(palette.background.strong.color.into()),
+                text_color: Color::WHITE,
+                border: Border {
+                    radius: 4.0.into(),
+                    ..Border::default()
+                },
+                ..base
+            },
+            button::Status::Disabled => button::Style {
+                text_color: palette.background.weak.text.scale_alpha(0.3),
+                ..base
+            },
+        }
+    };
+
+    // Style for destructive actions (Delete, Cancel)
+    // Idle: Transparent with Red Icon
+    // Hover: Red Background with White Icon
+    let danger_style = |theme: &Theme, status: button::Status| -> button::Style {
+        let palette = theme.extended_palette();
+        let base = button::Style {
+            background: Some(Color::TRANSPARENT.into()),
+            text_color: palette.danger.base.color,
+            border: Border::default(),
+            ..button::Style::default()
+        };
+
+        match status {
+            button::Status::Active => base,
+            button::Status::Hovered => button::Style {
+                background: Some(palette.danger.base.color.into()),
+                text_color: Color::WHITE,
+                border: Border {
+                    radius: 4.0.into(),
+                    ..Border::default()
+                },
+                ..base
+            },
+            button::Status::Pressed => button::Style {
+                background: Some(palette.danger.strong.color.into()),
+                text_color: Color::WHITE,
+                border: Border {
+                    radius: 4.0.into(),
+                    ..Border::default()
+                },
+                ..base
+            },
+            button::Status::Disabled => button::Style {
+                text_color: palette.danger.base.color.scale_alpha(0.3),
+                ..base
+            },
+        }
+    };
 
     // 2. Title Row (Just Summary) - replaced later with direct text in-line to avoid wrapping issues
 
@@ -135,7 +215,7 @@ pub fn view_task_row<'a>(
             .style(if is_expanded {
                 button::primary
             } else {
-                button::secondary
+                action_style
             })
             .padding(4)
             .width(Length::Fixed(25.0))
@@ -150,13 +230,13 @@ pub fn view_task_row<'a>(
         if *yanked != task.uid {
             actions = actions.push(
                 button(icon::icon(icon::BLOCKED).size(14))
-                    .style(button::secondary)
+                    .style(action_style)
                     .padding(4)
                     .on_press(Message::AddDependency(task.uid.clone())),
             );
             actions = actions.push(
                 button(icon::icon(icon::CHILD).size(14))
-                    .style(button::secondary)
+                    .style(action_style)
                     .padding(4)
                     .on_press(Message::MakeChild(task.uid.clone())),
             );
@@ -177,13 +257,11 @@ pub fn view_task_row<'a>(
     } else {
         actions = actions.push(
             button(icon::icon(icon::LINK).size(14))
-                .style(button::secondary)
+                .style(action_style)
                 .padding(4)
                 .on_press(Message::YankTask(task.uid.clone())),
         );
     }
-
-    let btn_style = button::secondary;
 
     // Status Controls (action button on the right)
     if task.status != crate::model::TaskStatus::Completed
@@ -197,7 +275,7 @@ pub fn view_task_row<'a>(
         };
         actions = actions.push(
             button(icon::icon(action_icon).size(14))
-                .style(btn_style)
+                .style(action_style)
                 .padding(4)
                 .on_press(Message::SetTaskStatus(index, msg_status)),
         );
@@ -205,19 +283,19 @@ pub fn view_task_row<'a>(
 
     actions = actions.push(
         button(icon::icon(icon::PLUS).size(14))
-            .style(btn_style)
+            .style(action_style)
             .padding(4)
             .on_press(Message::ChangePriority(index, 1)),
     );
     actions = actions.push(
         button(icon::icon(icon::MINUS).size(14))
-            .style(btn_style)
+            .style(action_style)
             .padding(4)
             .on_press(Message::ChangePriority(index, -1)),
     );
     actions = actions.push(
         button(icon::icon(icon::EDIT).size(14))
-            .style(btn_style)
+            .style(action_style)
             .padding(4)
             .on_press(Message::EditTaskStart(index)),
     );
@@ -227,7 +305,7 @@ pub fn view_task_row<'a>(
     // 1. Delete Button (Dangerously close prevention: Put it "inside")
     actions = actions.push(
         button(icon::icon(icon::TRASH).size(14))
-            .style(button::danger)
+            .style(danger_style)
             .padding(4)
             .on_press(Message::DeleteTask(index)),
     );
@@ -238,7 +316,7 @@ pub fn view_task_row<'a>(
     {
         actions = actions.push(
             button(icon::icon(icon::CROSS).size(14))
-                .style(button::danger)
+                .style(danger_style)
                 .padding(4)
                 .on_press(Message::SetTaskStatus(
                     index,
