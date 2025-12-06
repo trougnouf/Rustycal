@@ -353,7 +353,7 @@ fn view_main_content(app: &GuiApp) -> Element<'_, Message> {
         .spacing(10)
         .padding(iced::Padding {
             top: 10.0,
-            bottom: 5.0, // <-- Adjusted from 2.0 to 5.0
+            bottom: 5.0,
             left: 10.0,
             right: 10.0,
         })
@@ -551,8 +551,8 @@ fn view_input_area(app: &GuiApp) -> Element<'_, Message> {
 
     container(inner_content)
         .padding(iced::Padding {
-            top: 5.0, // <-- Adjusted from 2.0 to 5.0
-            bottom: 10.0,
+            top: 5.0,
+            bottom: 8.0,
             left: 10.0,
             right: 10.0,
         })
