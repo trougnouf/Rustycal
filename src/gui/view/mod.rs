@@ -1,3 +1,4 @@
+// File: ./src/gui/view/mod.rs
 pub mod help;
 pub mod settings;
 pub mod sidebar;
@@ -12,6 +13,7 @@ use crate::gui::view::sidebar::{view_sidebar_calendars, view_sidebar_categories}
 use crate::gui::view::task_row::view_task_row;
 use crate::storage::LOCAL_CALENDAR_HREF;
 
+use iced::widget::scrollable::{Direction, Scrollbar};
 use iced::widget::{MouseArea, Space, column, container, row, scrollable, stack, svg, text};
 use iced::{Background, Color, Element, Length, Theme, mouse};
 
@@ -157,7 +159,6 @@ pub fn root_view(app: &GuiApp) -> Element<'_, Message> {
     }
 }
 
-// ... [view_sidebar is unchanged] ...
 fn view_sidebar(app: &GuiApp) -> Element<'_, Message> {
     // 1. Tab Switcher
     let btn_cals = iced::widget::button(
@@ -238,7 +239,6 @@ fn view_sidebar(app: &GuiApp) -> Element<'_, Message> {
             }
         })
         .into()
-    // Remove the call to horizontal_space if it was appended previously
 }
 
 fn view_main_content(app: &GuiApp) -> Element<'_, Message> {
@@ -432,16 +432,22 @@ fn view_main_content(app: &GuiApp) -> Element<'_, Message> {
     main_col = main_col.push(
         scrollable(tasks_view)
             .height(Length::Fill)
-            .id(app.scrollable_id.clone()),
+            .id(app.scrollable_id.clone())
+            .direction(Direction::Vertical(
+                Scrollbar::new().width(10).scroller_width(10).margin(0),
+            )),
     );
 
     container(main_col)
         .width(Length::Fill)
         .height(Length::Fill)
+        .padding(iced::Padding {
+            right: 8.0,
+            ..Default::default()
+        })
         .into()
 }
 
-// ... [view_input_area is unchanged from previous] ...
 fn view_input_area(app: &GuiApp) -> Element<'_, Message> {
     let input_placeholder = if app.editing_uid.is_some() {
         "Edit Title...".to_string()
