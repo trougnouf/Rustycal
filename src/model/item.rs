@@ -53,7 +53,7 @@ pub struct Task {
     pub depth: usize,
     pub rrule: Option<String>,
 
-    // NEW: The bucket for everything else (Location, Attendees, etc.)
+    // The bucket for everything else (Location, Attendees, etc.)
     pub unmapped_properties: Vec<RawProperty>,
 }
 

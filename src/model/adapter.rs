@@ -3,9 +3,30 @@ use crate::model::item::{RawProperty, Task, TaskStatus};
 use chrono::{DateTime, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use icalendar::{Calendar, CalendarComponent, Component, Todo, TodoStatus};
 use rrule::RRuleSet;
-use std::collections::HashSet;
 use std::str::FromStr;
 use uuid::Uuid;
+
+const HANDLED_KEYS: &[&str] = &[
+    "UID",
+    "SUMMARY",
+    "DESCRIPTION",
+    "STATUS",
+    "PRIORITY",
+    "DUE",
+    "DTSTART",
+    "RRULE",
+    "DURATION",
+    "X-ESTIMATED-DURATION",
+    "CATEGORIES",
+    "RELATED-TO",
+    "DTSTAMP",
+    "CREATED",
+    "LAST-MODIFIED",
+    "SEQUENCE",
+    "PRODID",
+    "VERSION",
+    "CALSCALE",
+];
 
 impl Task {
     pub fn respawn(&self) -> Option<Task> {
@@ -304,25 +325,6 @@ impl Task {
         }
 
         // --- CAPTURE UNMAPPED PROPERTIES ---
-        // 1. Define list of keys we already handled above
-        let handled_keys: HashSet<&str> = HashSet::from([
-            "UID",
-            "SUMMARY",
-            "DESCRIPTION",
-            "STATUS",
-            "PRIORITY",
-            "DUE",
-            "DTSTART",
-            "RRULE",
-            "DURATION",
-            "X-ESTIMATED-DURATION",
-            "CATEGORIES",
-            "RELATED-TO",
-            "DTSTAMP",
-            "CREATED",
-            "LAST-MODIFIED",
-        ]);
-
         let mut unmapped_properties = Vec::new();
 
         // Helper to convert icalendar::Property to our RawProperty
@@ -344,12 +346,12 @@ impl Task {
 
         // 2. Iterate ALL properties (single and multi)
         for (key, prop) in todo.properties() {
-            if !handled_keys.contains(key.as_str()) {
+            if !HANDLED_KEYS.contains(&key.as_str()) {
                 unmapped_properties.push(to_raw(prop));
             }
         }
         for (key, props) in todo.multi_properties() {
-            if !handled_keys.contains(key.as_str()) {
+            if !HANDLED_KEYS.contains(&key.as_str()) {
                 for prop in props {
                     unmapped_properties.push(to_raw(prop));
                 }
