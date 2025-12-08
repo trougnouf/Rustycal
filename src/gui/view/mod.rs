@@ -224,9 +224,15 @@ fn view_sidebar(app: &GuiApp) -> Element<'_, Message> {
     ]
     .spacing(5);
 
-    let sidebar_inner = column![tabs, scrollable(content).height(Length::Fill), footer]
-        .spacing(10)
-        .padding(10);
+    let sidebar_inner = column![
+        tabs,
+        scrollable(content)
+            .height(Length::Fill)
+            .id(app.sidebar_scrollable_id.clone()), // Assign the ID here!
+        footer
+    ]
+    .spacing(10)
+    .padding(10);
 
     container(sidebar_inner)
         .width(220)

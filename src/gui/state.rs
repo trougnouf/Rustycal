@@ -89,6 +89,7 @@ pub struct GuiApp {
     pub ob_sort_months_input: String,
     pub ob_insecure: bool,
     pub scrollable_id: iced::widget::Id,
+    pub sidebar_scrollable_id: iced::widget::Id, // Added for tag scrolling
 
     // Window Resizing State
     pub resize_direction: Option<ResizeDirection>,
@@ -142,6 +143,7 @@ impl Default for GuiApp {
             ob_default_cal: None,
             ob_insecure: false,
             scrollable_id: iced::widget::Id::unique(),
+            sidebar_scrollable_id: iced::widget::Id::unique(), // Initialize unique ID
 
             resize_direction: None,
             current_window_size: iced::Size::new(800.0, 600.0),

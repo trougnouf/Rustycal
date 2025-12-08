@@ -128,6 +128,7 @@ pub fn view_task_row<'a>(
 
         for cat in &task.categories {
             let (r, g, b) = color_utils::generate_color(cat);
+            // Fully opaque colors per user request
             let bg_color = Color::from_rgb(r, g, b);
             let text_color = if color_utils::is_dark(r, g, b) {
                 Color::WHITE
@@ -135,17 +136,35 @@ pub fn view_task_row<'a>(
                 Color::BLACK
             };
 
+            // Use Button for clickable tags
             tags_row = tags_row.push(
-                container(text(format!("#{}", cat)).size(12).color(text_color))
-                    .style(move |_| container::Style {
-                        background: Some(bg_color.into()),
-                        border: iced::Border {
-                            radius: 4.0.into(),
-                            ..Default::default()
-                        },
-                        ..Default::default()
+                button(text(format!("#{}", cat)).size(12).color(text_color))
+                    .style(move |_theme, status| {
+                        let base = button::Style {
+                            background: Some(bg_color.into()),
+                            text_color,
+                            border: iced::Border {
+                                radius: 4.0.into(),
+                                ..Default::default()
+                            },
+                            ..button::Style::default()
+                        };
+
+                        // Add hover effect
+                        match status {
+                            button::Status::Hovered | button::Status::Pressed => button::Style {
+                                border: iced::Border {
+                                    color: Color::BLACK.scale_alpha(0.2),
+                                    width: 1.0,
+                                    radius: 4.0.into(),
+                                },
+                                ..base
+                            },
+                            _ => base,
+                        }
                     })
-                    .padding(3),
+                    .padding(3)
+                    .on_press(Message::JumpToTag(cat.clone())),
             );
         }
 

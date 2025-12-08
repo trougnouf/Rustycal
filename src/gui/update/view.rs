@@ -228,9 +228,33 @@ pub fn handle(app: &mut GuiApp, message: Message) -> Task<Message> {
         Message::JumpToTag(tag) => {
             app.sidebar_mode = SidebarMode::Categories;
             app.selected_categories.clear();
-            app.selected_categories.insert(tag);
+            app.selected_categories.insert(tag.clone());
             app.search_value.clear();
             refresh_filtered_tasks(app);
+
+            // AUTO-SCROLL LOGIC
+            let all_cats = app.store.get_all_categories(
+                app.hide_completed,
+                app.hide_fully_completed_tags,
+                &app.selected_categories,
+                &app.hidden_calendars,
+            );
+
+            if let Some(index) = all_cats.iter().position(|(t, _)| t == &tag) {
+                let total = all_cats.len();
+                if total > 1 {
+                    let y_offset = index as f32 / (total - 1) as f32;
+                    // FIX: Use operation::snap_to instead of scrollable::snap_to
+                    return iced::widget::operation::snap_to(
+                        app.sidebar_scrollable_id.clone(),
+                        iced::widget::scrollable::RelativeOffset {
+                            x: 0.0,
+                            y: y_offset,
+                        },
+                    );
+                }
+            }
+
             Task::none()
         }
         _ => Task::none(),
