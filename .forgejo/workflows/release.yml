@@ -48,7 +48,7 @@ jobs:
           fi
           
           # --- 1. Source Tarball (For AUR) ---
-          # FIX: Use git archive. This guarantees ONLY source code is included.
+          # Use git archive. This guarantees ONLY source code is included.
           # It ignores the .deb, target/, and any other generated files in the workspace.
           git archive --format=tar.gz --prefix="cfait-${CLEAN_VERSION}/" -o "cfait-source-${RAW_VERSION}.tar.gz" HEAD
           
@@ -75,10 +75,10 @@ jobs:
           RAW_VERSION="${{ github.ref_name }}"
           CLEAN_VER=$(echo "$RAW_VERSION" | sed 's/^v//')
           
-          # Hash the SOURCE tarball
+          # Hash the SOURCE tarball for the AUR PKGBUILD
           HASH=$(sha256sum "cfait-source-${RAW_VERSION}.tar.gz" | awk '{print $1}')
           
-          # Update PKGBUILD
+          # Update PKGBUILD (this modifies the file in ./packaging/arch/PKGBUILD)
           sed -i "s/pkgver=.*/pkgver=${CLEAN_VER}/" packaging/arch/PKGBUILD
           sed -i "s/'SKIP'/'$HASH'/" packaging/arch/PKGBUILD
           
@@ -86,19 +86,24 @@ jobs:
           NEW_SOURCE_URL="https://codeberg.org/trougnouf/cfait/releases/download/${RAW_VERSION}/cfait-source-${RAW_VERSION}.tar.gz"
           sed -i "s|source=.*|source=(\"cfait-source-${RAW_VERSION}.tar.gz::${NEW_SOURCE_URL}\")|" packaging/arch/PKGBUILD
           
-          # Clean build environment for Arch
-          rm -rf target/
-          
+          # Prepare the build directory
           mkdir -p arch-build
           cp packaging/arch/PKGBUILD arch-build/
-          # Provide the source tarball locally so makepkg doesn't try to download it
           cp "cfait-source-${RAW_VERSION}.tar.gz" "arch-build/cfait-source-${RAW_VERSION}.tar.gz"
+
+          # Instead of cleaning the build, we inject our pre-compiled artifacts
+          # into the directory where `makepkg` will build the source.
+          # `cargo` will detect that the binaries are already up-to-date and will not recompile.
+          echo "Injecting pre-compiled binaries into makepkg's build environment..."
+          BUILD_SRC_DIR="arch-build/src/cfait-${CLEAN_VER}"
+          mkdir -p "${BUILD_SRC_DIR}"
+          cp -r target "${BUILD_SRC_DIR}/"
           
           # Permission Fixes
           chown -R builder:builder arch-build
           chown -R builder:builder /usr/local/cargo
           
-          # Build
+          # Build the package
           (
             cd arch-build
             su builder -c "makepkg --printsrcinfo > .SRCINFO"
