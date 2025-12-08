@@ -160,6 +160,28 @@ pub fn root_view(app: &GuiApp) -> Element<'_, Message> {
 }
 
 fn view_sidebar(app: &GuiApp) -> Element<'_, Message> {
+    // Define a custom style for the active tab using Amber/Orange
+    let active_tab_style =
+        |_theme: &Theme, status: iced::widget::button::Status| -> iced::widget::button::Style {
+            let base = iced::widget::button::Style {
+                background: Some(Color::from_rgb(1.0, 0.6, 0.0).into()), // Amber
+                text_color: Color::BLACK,
+                border: iced::Border {
+                    radius: 4.0.into(),
+                    ..Default::default()
+                },
+                ..iced::widget::button::Style::default()
+            };
+
+            match status {
+                iced::widget::button::Status::Hovered => iced::widget::button::Style {
+                    background: Some(Color::from_rgb(1.0, 0.7, 0.1).into()), // Lighter Amber on hover
+                    ..base
+                },
+                _ => base,
+            }
+        };
+
     // 1. Tab Switcher
     let btn_cals = iced::widget::button(
         container(text("Calendars").size(14))
@@ -169,7 +191,7 @@ fn view_sidebar(app: &GuiApp) -> Element<'_, Message> {
     .padding(5)
     .width(Length::Fill)
     .style(if app.sidebar_mode == SidebarMode::Calendars {
-        iced::widget::button::primary
+        active_tab_style
     } else {
         iced::widget::button::secondary
     })
@@ -183,7 +205,7 @@ fn view_sidebar(app: &GuiApp) -> Element<'_, Message> {
     .padding(5)
     .width(Length::Fill)
     .style(if app.sidebar_mode == SidebarMode::Categories {
-        iced::widget::button::primary
+        active_tab_style
     } else {
         iced::widget::button::secondary
     })
