@@ -15,14 +15,20 @@ pub fn handle_app_event(state: &mut AppState, event: AppEvent, default_cal: &Opt
         }
         AppEvent::CalendarsLoaded(cals) => {
             state.calendars = cals;
+
+            // Unhide default calendar on load
             if let Some(def) = default_cal
                 && let Some(found) = state
                     .calendars
                     .iter()
                     .find(|c| c.name == *def || c.href == *def)
             {
+                if state.hidden_calendars.contains(&found.href) {
+                    state.hidden_calendars.remove(&found.href);
+                }
                 state.active_cal_href = Some(found.href.clone());
             }
+
             if state.active_cal_href.is_none() {
                 state.active_cal_href = Some(LOCAL_CALENDAR_HREF.to_string());
             }
@@ -37,6 +43,8 @@ pub fn handle_app_event(state: &mut AppState, event: AppEvent, default_cal: &Opt
         }
     }
 }
+
+// ... rest of the file is unchanged ...
 
 pub async fn handle_key_event(
     key: KeyEvent,
@@ -76,7 +84,6 @@ pub async fn handle_key_event(
                     task.calendar_href = href.clone();
                     task.parent_uid = state.creating_child_of.clone();
 
-                    // Fix: Use add_task to maintain index
                     state.store.add_task(task.clone());
                     state.refresh_filtered_view();
 

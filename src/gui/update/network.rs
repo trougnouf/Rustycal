@@ -1,4 +1,4 @@
-// File: ./src/gui/update/network.rs
+// File: src/gui/update/network.rs
 use crate::cache::Cache;
 use crate::config::Config;
 use crate::gui::async_ops::*;
@@ -62,24 +62,37 @@ pub fn handle(app: &mut GuiApp, message: Message) -> Task<Message> {
                 }
             }
 
+            // Re-validate active calendar against current hidden state
+            let mut valid_active = None;
             if let Some(current) = &app.active_cal_href
                 && app.calendars.iter().any(|c| c.href == *current)
+                && !app.hidden_calendars.contains(current)
             {
-                active = Some(current.clone());
+                valid_active = Some(current.clone());
             }
 
-            if active.is_none() {
-                active = Some(LOCAL_CALENDAR_HREF.to_string());
+            // If the optimistic active calendar was invalid or hidden, check the one returned from network
+            if valid_active.is_none()
+                && let Some(net_active) = active
+                && !app.hidden_calendars.contains(&net_active)
+            {
+                valid_active = Some(net_active);
             }
 
-            if app.error_msg.is_none()
-                && let Some(href) = &active
+            // Fallback
+            if valid_active.is_none() {
+                valid_active = Some(LOCAL_CALENDAR_HREF.to_string());
+            }
+
+            active = valid_active;
+            app.active_cal_href = active.clone();
+
+            if let Some(href) = &active
                 && href != LOCAL_CALENDAR_HREF
+                && app.error_msg.is_none()
             {
                 app.store.insert(href.clone(), tasks);
             }
-
-            app.active_cal_href = active;
 
             if let Ok(cfg) = Config::load() {
                 app.hide_completed = cfg.hide_completed;
@@ -138,13 +151,16 @@ pub fn handle(app: &mut GuiApp, message: Message) -> Task<Message> {
             Task::none()
         }
         Message::SyncSaved(Ok(updated)) => {
-            if let Some(tasks) = app.store.calendars.get_mut(&updated.calendar_href)
-                && let Some(idx) = tasks.iter().position(|t| t.uid == updated.uid)
-            {
-                tasks[idx] = updated.clone();
+            if let Some(tasks) = app.store.calendars.get_mut(&updated.calendar_href) {
+                if let Some(idx) = tasks.iter().position(|t| t.uid == updated.uid) {
+                    tasks[idx] = updated.clone();
+                } else {
+                    tasks.push(updated.clone());
+                }
                 let (_, token) = Cache::load(&updated.calendar_href).unwrap_or((vec![], None));
                 let _ = Cache::save(&updated.calendar_href, tasks, token);
             }
+
             app.unsynced_changes = !Journal::load().is_empty();
             if app.unsynced_changes {
                 app.error_msg = Some("Offline: Changes queued.".to_string());
@@ -177,6 +193,8 @@ pub fn handle(app: &mut GuiApp, message: Message) -> Task<Message> {
             }
         },
         Message::TaskMoved(Ok(new_task)) => {
+            // Note: Store update already handled by synchronous wrapper in handlers.rs
+            // We just ensure cache is consistent and re-render
             if let Some(list) = app.store.calendars.get_mut(&new_task.calendar_href) {
                 if let Some(idx) = list.iter().position(|t| t.uid == new_task.uid) {
                     list[idx] = new_task.clone();
