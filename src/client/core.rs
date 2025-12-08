@@ -865,6 +865,9 @@ fn three_way_merge(base: &Task, local: &Task, server: &Task) -> Option<Task> {
     merge_field!(parent_uid);
     merge_field!(unmapped_properties);
 
+    // NEW: Handle raw components (Exceptions/Timezones)
+    merge_field!(raw_components);
+
     // Metadata is already from Server (via clone at start)
     // merged.etag = server.etag.clone();
     // merged.href = server.href.clone();

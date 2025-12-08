@@ -139,7 +139,8 @@ impl Task {
         calendar.push(todo);
         let mut ics = calendar.to_string();
 
-        // Manual injection of CATEGORIES (icalendar crate doesn't handle comma-escaping perfectly for this specific case sometimes)
+        // 1. Manual injection of CATEGORIES (Must happen before appending raw components)
+        // to ensure we are modifying the Master VTODO.
         if !self.categories.is_empty() {
             let escaped_cats: Vec<String> = self
                 .categories
@@ -154,6 +155,25 @@ impl Task {
             }
         }
 
+        // 2. Inject Raw Components (Exceptions, Timezones, etc.)
+        // We inject them just before the closing END:VCALENDAR
+        if !self.raw_components.is_empty() {
+            let trimmed = ics.trim_end();
+            if let Some(idx) = trimmed.rfind("END:VCALENDAR") {
+                let (start, end) = trimmed.split_at(idx);
+                let mut buffer = String::from(start);
+
+                for raw in &self.raw_components {
+                    buffer.push_str(raw);
+                    if !raw.ends_with("\r\n") && !raw.ends_with('\n') {
+                        buffer.push_str("\r\n");
+                    }
+                }
+                buffer.push_str(end);
+                ics = buffer;
+            }
+        }
+
         ics
     }
 
@@ -164,14 +184,40 @@ impl Task {
         calendar_href: String,
     ) -> Result<Self, String> {
         let calendar: Calendar = raw_ics.parse().map_err(|e| format!("Parse: {}", e))?;
-        let todo = calendar
-            .components
-            .iter()
-            .find_map(|c| match c {
-                CalendarComponent::Todo(t) => Some(t),
-                _ => None,
-            })
-            .ok_or("No VTODO")?;
+
+        // Strategy: Iterate components to separate the "Master" VTODO from exceptions (RECURRENCE-ID).
+        // Any non-Master component (exceptions, events, venues) is preserved as a raw string.
+        let mut master_todo: Option<&Todo> = None;
+        let mut raw_components: Vec<String> = Vec::new();
+
+        for component in &calendar.components {
+            match component {
+                CalendarComponent::Todo(t) => {
+                    // Check if it's an Exception (has RECURRENCE-ID)
+                    let is_exception = t.properties().contains_key("RECURRENCE-ID");
+
+                    if is_exception {
+                        raw_components.push(t.to_string());
+                    } else if master_todo.is_none() {
+                        master_todo = Some(t);
+                    } else {
+                        // We already have a master, treat subsequent non-exception todos as raw
+                        // (though valid iCal should only have one master VTODO)
+                        raw_components.push(t.to_string());
+                    }
+                }
+                CalendarComponent::Event(e) => raw_components.push(e.to_string()),
+                CalendarComponent::Venue(v) => raw_components.push(v.to_string()),
+                _ => {} // Future variants
+            }
+        }
+
+        let todo = match master_todo {
+            Some(t) => t,
+            // If no master found, maybe we shouldn't fail if we have raw components?
+            // But for a Task Manager, we need at least one Task entity.
+            None => return Err("No Master VTODO found in ICS".to_string()),
+        };
 
         let summary = todo.get_summary().unwrap_or("No Title").to_string();
         let description = todo.get_description().unwrap_or("").to_string();
@@ -327,14 +373,11 @@ impl Task {
         // --- CAPTURE UNMAPPED PROPERTIES ---
         let mut unmapped_properties = Vec::new();
 
-        // Helper to convert icalendar::Property to our RawProperty
         let to_raw = |prop: &icalendar::Property| -> RawProperty {
             let mut params = Vec::new();
-            // FIXED: param is &Parameter, directly access value()
             for (k, param) in prop.params().iter() {
                 params.push((k.clone(), param.value().to_string()));
             }
-            // Sort params so PartialEq works reliably for conflict resolution
             params.sort();
 
             RawProperty {
@@ -344,7 +387,6 @@ impl Task {
             }
         };
 
-        // 2. Iterate ALL properties (single and multi)
         for (key, prop) in todo.properties() {
             if !HANDLED_KEYS.contains(&key.as_str()) {
                 unmapped_properties.push(to_raw(prop));
@@ -358,7 +400,6 @@ impl Task {
             }
         }
 
-        // Sort unmapped properties by key so PartialEq works reliably in merge logic
         unmapped_properties.sort_by(|a, b| a.key.cmp(&b.key).then(a.value.cmp(&b.value)));
 
         Ok(Task {
@@ -378,7 +419,8 @@ impl Task {
             categories,
             depth: 0,
             rrule,
-            unmapped_properties, // <--- SAVED
+            unmapped_properties,
+            raw_components, // <--- SAVED
         })
     }
 }

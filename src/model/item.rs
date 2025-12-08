@@ -55,6 +55,10 @@ pub struct Task {
 
     // The bucket for everything else (Location, Attendees, etc.)
     pub unmapped_properties: Vec<RawProperty>,
+
+    // NEW FIELD: Store raw string representations of other components (Exceptions, etc.)
+    #[serde(default)]
+    pub raw_components: Vec<String>,
 }
 
 impl Task {
@@ -76,7 +80,8 @@ impl Task {
             categories: Vec::new(),
             depth: 0,
             rrule: None,
-            unmapped_properties: Vec::new(), // Init empty
+            unmapped_properties: Vec::new(),
+            raw_components: Vec::new(), // Initialize empty
         };
         // Use the parser module
         task.apply_smart_input(input, aliases);
