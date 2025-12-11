@@ -641,19 +641,27 @@ internal object IntegrityCheckingUniffiLib {
         uniffiCheckContractApiVersion(this)
         uniffiCheckApiChecksums(this)
     }
+    external fun uniffi_cfait_checksum_method_cfaitmobile_add_alias(
+    ): Short
     external fun uniffi_cfait_checksum_method_cfaitmobile_add_task_smart(
     ): Short
     external fun uniffi_cfait_checksum_method_cfaitmobile_connect(
     ): Short
     external fun uniffi_cfait_checksum_method_cfaitmobile_delete_task(
     ): Short
+    external fun uniffi_cfait_checksum_method_cfaitmobile_get_all_tags(
+    ): Short
     external fun uniffi_cfait_checksum_method_cfaitmobile_get_calendars(
     ): Short
     external fun uniffi_cfait_checksum_method_cfaitmobile_get_config(
     ): Short
-    external fun uniffi_cfait_checksum_method_cfaitmobile_get_tasks(
+    external fun uniffi_cfait_checksum_method_cfaitmobile_get_view_tasks(
     ): Short
     external fun uniffi_cfait_checksum_method_cfaitmobile_load_and_connect(
+    ): Short
+    external fun uniffi_cfait_checksum_method_cfaitmobile_move_task(
+    ): Short
+    external fun uniffi_cfait_checksum_method_cfaitmobile_remove_alias(
     ): Short
     external fun uniffi_cfait_checksum_method_cfaitmobile_save_config(
     ): Short
@@ -693,20 +701,28 @@ internal object UniffiLib {
     ): Unit
     external fun uniffi_cfait_fn_constructor_cfaitmobile_new(`androidFilesDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Long
+    external fun uniffi_cfait_fn_method_cfaitmobile_add_alias(`ptr`: Long,`key`: RustBuffer.ByValue,`tags`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     external fun uniffi_cfait_fn_method_cfaitmobile_add_task_smart(`ptr`: Long,`input`: RustBuffer.ByValue,
     ): Long
     external fun uniffi_cfait_fn_method_cfaitmobile_connect(`ptr`: Long,`url`: RustBuffer.ByValue,`user`: RustBuffer.ByValue,`pass`: RustBuffer.ByValue,`insecure`: Byte,
     ): Long
     external fun uniffi_cfait_fn_method_cfaitmobile_delete_task(`ptr`: Long,`uid`: RustBuffer.ByValue,
     ): Long
+    external fun uniffi_cfait_fn_method_cfaitmobile_get_all_tags(`ptr`: Long,
+    ): Long
     external fun uniffi_cfait_fn_method_cfaitmobile_get_calendars(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     external fun uniffi_cfait_fn_method_cfaitmobile_get_config(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
-    external fun uniffi_cfait_fn_method_cfaitmobile_get_tasks(`ptr`: Long,
+    external fun uniffi_cfait_fn_method_cfaitmobile_get_view_tasks(`ptr`: Long,`filterTag`: RustBuffer.ByValue,`searchQuery`: RustBuffer.ByValue,
     ): Long
     external fun uniffi_cfait_fn_method_cfaitmobile_load_and_connect(`ptr`: Long,
     ): Long
+    external fun uniffi_cfait_fn_method_cfaitmobile_move_task(`ptr`: Long,`uid`: RustBuffer.ByValue,`newCalHref`: RustBuffer.ByValue,
+    ): Long
+    external fun uniffi_cfait_fn_method_cfaitmobile_remove_alias(`ptr`: Long,`key`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Unit
     external fun uniffi_cfait_fn_method_cfaitmobile_save_config(`ptr`: Long,`url`: RustBuffer.ByValue,`user`: RustBuffer.ByValue,`pass`: RustBuffer.ByValue,`insecure`: Byte,`hideCompleted`: Byte,uniffi_out_err: UniffiRustCallStatus, 
     ): Unit
     external fun uniffi_cfait_fn_method_cfaitmobile_set_calendar_visibility(`ptr`: Long,`href`: RustBuffer.ByValue,`visible`: Byte,uniffi_out_err: UniffiRustCallStatus, 
@@ -838,6 +854,9 @@ private fun uniffiCheckContractApiVersion(lib: IntegrityCheckingUniffiLib) {
 }
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
+    if (lib.uniffi_cfait_checksum_method_cfaitmobile_add_alias() != 28622.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_cfait_checksum_method_cfaitmobile_add_task_smart() != 42651.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -847,16 +866,25 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_cfait_checksum_method_cfaitmobile_delete_task() != 55596.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_cfait_checksum_method_cfaitmobile_get_all_tags() != 21633.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_cfait_checksum_method_cfaitmobile_get_calendars() != 46615.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_cfait_checksum_method_cfaitmobile_get_config() != 1475.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
-    if (lib.uniffi_cfait_checksum_method_cfaitmobile_get_tasks() != 57156.toShort()) {
+    if (lib.uniffi_cfait_checksum_method_cfaitmobile_get_view_tasks() != 40875.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_cfait_checksum_method_cfaitmobile_load_and_connect() != 17717.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cfait_checksum_method_cfaitmobile_move_task() != 45551.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_cfait_checksum_method_cfaitmobile_remove_alias() != 4330.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_cfait_checksum_method_cfaitmobile_save_config() != 17339.toShort()) {
@@ -1302,19 +1330,27 @@ public object FfiConverterString: FfiConverter<String, RustBuffer.ByValue> {
 //
 public interface CfaitMobileInterface {
     
+    fun `addAlias`(`key`: kotlin.String, `tags`: List<kotlin.String>)
+    
     suspend fun `addTaskSmart`(`input`: kotlin.String)
     
     suspend fun `connect`(`url`: kotlin.String, `user`: kotlin.String, `pass`: kotlin.String, `insecure`: kotlin.Boolean): kotlin.String
     
     suspend fun `deleteTask`(`uid`: kotlin.String)
     
+    suspend fun `getAllTags`(): List<MobileTag>
+    
     fun `getCalendars`(): List<MobileCalendar>
     
     fun `getConfig`(): MobileConfig
     
-    suspend fun `getTasks`(): List<MobileTask>
+    suspend fun `getViewTasks`(`filterTag`: kotlin.String?, `searchQuery`: kotlin.String): List<MobileTask>
     
     suspend fun `loadAndConnect`(): kotlin.String
+    
+    suspend fun `moveTask`(`uid`: kotlin.String, `newCalHref`: kotlin.String)
+    
+    fun `removeAlias`(`key`: kotlin.String)
     
     fun `saveConfig`(`url`: kotlin.String, `user`: kotlin.String, `pass`: kotlin.String, `insecure`: kotlin.Boolean, `hideCompleted`: kotlin.Boolean)
     
@@ -1436,6 +1472,19 @@ open class CfaitMobile: Disposable, AutoCloseable, CfaitMobileInterface
     }
 
     
+    @Throws(MobileException::class)override fun `addAlias`(`key`: kotlin.String, `tags`: List<kotlin.String>)
+        = 
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_cfait_fn_method_cfaitmobile_add_alias(
+        it,
+        FfiConverterString.lower(`key`),FfiConverterSequenceString.lower(`tags`),_status)
+}
+    }
+    
+    
+
+    
     @Throws(MobileException::class)
     @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
     override suspend fun `addTaskSmart`(`input`: kotlin.String) {
@@ -1500,6 +1549,26 @@ open class CfaitMobile: Disposable, AutoCloseable, CfaitMobileInterface
     )
     }
 
+    
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `getAllTags`() : List<MobileTag> {
+        return uniffiRustCallAsync(
+        callWithHandle { uniffiHandle ->
+            UniffiLib.uniffi_cfait_fn_method_cfaitmobile_get_all_tags(
+                uniffiHandle,
+                
+            )
+        },
+        { future, callback, continuation -> UniffiLib.ffi_cfait_rust_future_poll_rust_buffer(future, callback, continuation) },
+        { future, continuation -> UniffiLib.ffi_cfait_rust_future_complete_rust_buffer(future, continuation) },
+        { future -> UniffiLib.ffi_cfait_rust_future_free_rust_buffer(future) },
+        // lift function
+        { FfiConverterSequenceTypeMobileTag.lift(it) },
+        // Error FFI converter
+        UniffiNullRustCallStatusErrorHandler,
+    )
+    }
+
     override fun `getCalendars`(): List<MobileCalendar> {
             return FfiConverterSequenceTypeMobileCalendar.lift(
     callWithHandle {
@@ -1528,12 +1597,12 @@ open class CfaitMobile: Disposable, AutoCloseable, CfaitMobileInterface
 
     
     @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
-    override suspend fun `getTasks`() : List<MobileTask> {
+    override suspend fun `getViewTasks`(`filterTag`: kotlin.String?, `searchQuery`: kotlin.String) : List<MobileTask> {
         return uniffiRustCallAsync(
         callWithHandle { uniffiHandle ->
-            UniffiLib.uniffi_cfait_fn_method_cfaitmobile_get_tasks(
+            UniffiLib.uniffi_cfait_fn_method_cfaitmobile_get_view_tasks(
                 uniffiHandle,
-                
+                FfiConverterOptionalString.lower(`filterTag`),FfiConverterString.lower(`searchQuery`),
             )
         },
         { future, callback, continuation -> UniffiLib.ffi_cfait_rust_future_poll_rust_buffer(future, callback, continuation) },
@@ -1566,6 +1635,41 @@ open class CfaitMobile: Disposable, AutoCloseable, CfaitMobileInterface
         MobileException.ErrorHandler,
     )
     }
+
+    
+    @Throws(MobileException::class)
+    @Suppress("ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE")
+    override suspend fun `moveTask`(`uid`: kotlin.String, `newCalHref`: kotlin.String) {
+        return uniffiRustCallAsync(
+        callWithHandle { uniffiHandle ->
+            UniffiLib.uniffi_cfait_fn_method_cfaitmobile_move_task(
+                uniffiHandle,
+                FfiConverterString.lower(`uid`),FfiConverterString.lower(`newCalHref`),
+            )
+        },
+        { future, callback, continuation -> UniffiLib.ffi_cfait_rust_future_poll_void(future, callback, continuation) },
+        { future, continuation -> UniffiLib.ffi_cfait_rust_future_complete_void(future, continuation) },
+        { future -> UniffiLib.ffi_cfait_rust_future_free_void(future) },
+        // lift function
+        { Unit },
+        
+        // Error FFI converter
+        MobileException.ErrorHandler,
+    )
+    }
+
+    
+    @Throws(MobileException::class)override fun `removeAlias`(`key`: kotlin.String)
+        = 
+    callWithHandle {
+    uniffiRustCallWithError(MobileException) { _status ->
+    UniffiLib.uniffi_cfait_fn_method_cfaitmobile_remove_alias(
+        it,
+        FfiConverterString.lower(`key`),_status)
+}
+    }
+    
+    
 
     
     @Throws(MobileException::class)override fun `saveConfig`(`url`: kotlin.String, `user`: kotlin.String, `pass`: kotlin.String, `insecure`: kotlin.Boolean, `hideCompleted`: kotlin.Boolean)
@@ -1773,6 +1877,8 @@ data class MobileConfig (
     var `allowInsecure`: kotlin.Boolean
     , 
     var `hideCompleted`: kotlin.Boolean
+    , 
+    var `tagAliases`: Map<kotlin.String, List<kotlin.String>>
     
 ){
     
@@ -1792,6 +1898,7 @@ public object FfiConverterTypeMobileConfig: FfiConverterRustBuffer<MobileConfig>
             FfiConverterOptionalString.read(buf),
             FfiConverterBoolean.read(buf),
             FfiConverterBoolean.read(buf),
+            FfiConverterMapStringSequenceString.read(buf),
         )
     }
 
@@ -1800,7 +1907,8 @@ public object FfiConverterTypeMobileConfig: FfiConverterRustBuffer<MobileConfig>
             FfiConverterString.allocationSize(value.`username`) +
             FfiConverterOptionalString.allocationSize(value.`defaultCalendar`) +
             FfiConverterBoolean.allocationSize(value.`allowInsecure`) +
-            FfiConverterBoolean.allocationSize(value.`hideCompleted`)
+            FfiConverterBoolean.allocationSize(value.`hideCompleted`) +
+            FfiConverterMapStringSequenceString.allocationSize(value.`tagAliases`)
     )
 
     override fun write(value: MobileConfig, buf: ByteBuffer) {
@@ -1809,6 +1917,48 @@ public object FfiConverterTypeMobileConfig: FfiConverterRustBuffer<MobileConfig>
             FfiConverterOptionalString.write(value.`defaultCalendar`, buf)
             FfiConverterBoolean.write(value.`allowInsecure`, buf)
             FfiConverterBoolean.write(value.`hideCompleted`, buf)
+            FfiConverterMapStringSequenceString.write(value.`tagAliases`, buf)
+    }
+}
+
+
+
+data class MobileTag (
+    var `name`: kotlin.String
+    , 
+    var `count`: kotlin.UInt
+    , 
+    var `isUncategorized`: kotlin.Boolean
+    
+){
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeMobileTag: FfiConverterRustBuffer<MobileTag> {
+    override fun read(buf: ByteBuffer): MobileTag {
+        return MobileTag(
+            FfiConverterString.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterBoolean.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: MobileTag) = (
+            FfiConverterString.allocationSize(value.`name`) +
+            FfiConverterUInt.allocationSize(value.`count`) +
+            FfiConverterBoolean.allocationSize(value.`isUncategorized`)
+    )
+
+    override fun write(value: MobileTag, buf: ByteBuffer) {
+            FfiConverterString.write(value.`name`, buf)
+            FfiConverterUInt.write(value.`count`, buf)
+            FfiConverterBoolean.write(value.`isUncategorized`, buf)
     }
 }
 
@@ -1840,6 +1990,10 @@ data class MobileTask (
     var `parentUid`: kotlin.String?
     , 
     var `smartString`: kotlin.String
+    , 
+    var `depth`: kotlin.UInt
+    , 
+    var `isBlocked`: kotlin.Boolean
     
 ){
     
@@ -1867,6 +2021,8 @@ public object FfiConverterTypeMobileTask: FfiConverterRustBuffer<MobileTask> {
             FfiConverterBoolean.read(buf),
             FfiConverterOptionalString.read(buf),
             FfiConverterString.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterBoolean.read(buf),
         )
     }
 
@@ -1883,7 +2039,9 @@ public object FfiConverterTypeMobileTask: FfiConverterRustBuffer<MobileTask> {
             FfiConverterSequenceString.allocationSize(value.`categories`) +
             FfiConverterBoolean.allocationSize(value.`isRecurring`) +
             FfiConverterOptionalString.allocationSize(value.`parentUid`) +
-            FfiConverterString.allocationSize(value.`smartString`)
+            FfiConverterString.allocationSize(value.`smartString`) +
+            FfiConverterUInt.allocationSize(value.`depth`) +
+            FfiConverterBoolean.allocationSize(value.`isBlocked`)
     )
 
     override fun write(value: MobileTask, buf: ByteBuffer) {
@@ -1900,6 +2058,8 @@ public object FfiConverterTypeMobileTask: FfiConverterRustBuffer<MobileTask> {
             FfiConverterBoolean.write(value.`isRecurring`, buf)
             FfiConverterOptionalString.write(value.`parentUid`, buf)
             FfiConverterString.write(value.`smartString`, buf)
+            FfiConverterUInt.write(value.`depth`, buf)
+            FfiConverterBoolean.write(value.`isBlocked`, buf)
     }
 }
 
@@ -2071,6 +2231,34 @@ public object FfiConverterSequenceTypeMobileCalendar: FfiConverterRustBuffer<Lis
 /**
  * @suppress
  */
+public object FfiConverterSequenceTypeMobileTag: FfiConverterRustBuffer<List<MobileTag>> {
+    override fun read(buf: ByteBuffer): List<MobileTag> {
+        val len = buf.getInt()
+        return List<MobileTag>(len) {
+            FfiConverterTypeMobileTag.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<MobileTag>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeMobileTag.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<MobileTag>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeMobileTag.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceTypeMobileTask: FfiConverterRustBuffer<List<MobileTask>> {
     override fun read(buf: ByteBuffer): List<MobileTask> {
         val len = buf.getInt()
@@ -2089,6 +2277,45 @@ public object FfiConverterSequenceTypeMobileTask: FfiConverterRustBuffer<List<Mo
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypeMobileTask.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterMapStringSequenceString: FfiConverterRustBuffer<Map<kotlin.String, List<kotlin.String>>> {
+    override fun read(buf: ByteBuffer): Map<kotlin.String, List<kotlin.String>> {
+        val len = buf.getInt()
+        return buildMap<kotlin.String, List<kotlin.String>>(len) {
+            repeat(len) {
+                val k = FfiConverterString.read(buf)
+                val v = FfiConverterSequenceString.read(buf)
+                this[k] = v
+            }
+        }
+    }
+
+    override fun allocationSize(value: Map<kotlin.String, List<kotlin.String>>): ULong {
+        val spaceForMapSize = 4UL
+        val spaceForChildren = value.map { (k, v) ->
+            FfiConverterString.allocationSize(k) +
+            FfiConverterSequenceString.allocationSize(v)
+        }.sum()
+        return spaceForMapSize + spaceForChildren
+    }
+
+    override fun write(value: Map<kotlin.String, List<kotlin.String>>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        // The parens on `(k, v)` here ensure we're calling the right method,
+        // which is important for compatibility with older android devices.
+        // Ref https://blog.danlew.net/2017/03/16/kotlin-puzzler-whose-line-is-it-anyways/
+        value.forEach { (k, v) ->
+            FfiConverterString.write(k, buf)
+            FfiConverterSequenceString.write(v, buf)
         }
     }
 }

@@ -62,7 +62,7 @@ pub fn view_help() -> Element<'static, Message> {
             "Search & Filtering", 
             crate::gui::icon::SHIELD, 
             vec![
-                entry("text", "Matches summary or description.", "buy milk"),
+                entry("text", "Matches summary or description.", "buy cat food"),
                 entry("#tag", "Filter by specific tag.", "#gardening"),
                 entry("is:status", "Filter by state.", "is:done, is:ongoing, is:active"),
                 entry("Operators", "Compare values (<, >, <=, >=).", "~<20m (less than 20 minutes), <!4 (urgent tasks)"),

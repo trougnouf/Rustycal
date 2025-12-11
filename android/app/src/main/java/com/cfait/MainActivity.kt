@@ -29,31 +29,31 @@ import androidx.navigation.compose.rememberNavController
 import com.cfait.core.CfaitMobile
 import com.cfait.core.MobileCalendar
 import com.cfait.core.MobileTask
+import com.cfait.core.MobileTag
 import kotlinx.coroutines.launch
 
 // --- FONTS & ICONS ---
 val NerdFont = FontFamily(Font(R.font.symbols_nerd_font))
 
 object NfIcons {
-    // Helper to convert hex codepoints (including > FFFF) to String
     fun get(code: Int): String = String(Character.toChars(code))
-
+    val SEARCH = get(0xf002)
     val CALENDAR = get(0xf073)
     val TAG = get(0xf02b)
-    val REFRESH = get(0xf0450) // Note: This might render as box if glyph missing in mobile font version
+    val REFRESH = get(0xf021) 
     val SETTINGS = get(0xe690)
     val DELETE = get(0xf1f8)
     val CHECK = get(0xf00c)
     val CROSS = get(0xf00d)
     val PLAY = get(0xf04b)
-    val PAUSE = get(0xf04c)
     val REPEAT = get(0xf0b6)
     val VISIBLE = get(0xea70)
     val HIDDEN = get(0xeae7)
-    val WRITE_TARGET = get(0xf0cfb) // Floppy/Save-Edit icon
-    val MENU = get(0xf0c9) // Standard Hamburger
+    val WRITE_TARGET = get(0xf0cfb)
+    val MENU = get(0xf0c9)
     val ADD = get(0xf067)
     val BACK = get(0xf060)
+    val BLOCK = get(0xf479)
 }
 
 class MainActivity : ComponentActivity() {
@@ -61,105 +61,75 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         val api = CfaitMobile(filesDir.absolutePath)
         setContent {
-            val darkTheme = isSystemInDarkTheme()
-            val colors = if (darkTheme) darkColorScheme() else lightColorScheme()
-            MaterialTheme(colorScheme = colors) {
+            MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {
                 CfaitNavHost(api)
             }
         }
     }
 }
 
-// --- NAVIGATION & STATE ---
-
 @Composable
 fun CfaitNavHost(api: CfaitMobile) {
     val navController = rememberNavController()
-    var tasks by remember { mutableStateOf<List<MobileTask>>(emptyList()) }
     var calendars by remember { mutableStateOf<List<MobileCalendar>>(emptyList()) }
-    var hideCompleted by remember { mutableStateOf(false) }
+    var tags by remember { mutableStateOf<List<MobileTag>>(emptyList()) }
     var defaultCalHref by remember { mutableStateOf<String?>(null) }
     
     val scope = rememberCoroutineScope()
     var isLoading by remember { mutableStateOf(false) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
 
-    fun refresh() {
+    fun refreshCommon() {
         scope.launch {
-            isLoading = true
             try {
-                try { api.loadAndConnect() } catch (_: Exception) {}
-                val config = api.getConfig()
-                hideCompleted = config.hideCompleted
-                defaultCalHref = config.defaultCalendar
                 calendars = api.getCalendars()
-                tasks = api.getTasks()
+                tags = api.getAllTags()
+                defaultCalHref = api.getConfig().defaultCalendar
             } catch (e: Exception) {
-                statusMessage = "Error: ${e.message}"
-            } finally {
-                isLoading = false
+                statusMessage = e.message
             }
         }
     }
 
-    LaunchedEffect(Unit) { refresh() }
+    LaunchedEffect(Unit) {
+        isLoading = true
+        try { api.loadAndConnect(); refreshCommon() } catch (_: Exception) {}
+        isLoading = false
+    }
 
     NavHost(navController, startDestination = "home") {
         composable("home") {
             HomeScreen(
-                tasks = tasks,
+                api = api,
                 calendars = calendars,
+                tags = tags,
                 defaultCalHref = defaultCalHref,
-                hideCompleted = hideCompleted,
                 isLoading = isLoading,
-                onRefresh = { refresh() },
-                onAddTask = { txt ->
+                onGlobalRefresh = {
                     scope.launch {
-                        try { api.addTaskSmart(txt); refresh() } catch (e: Exception) { statusMessage = e.message }
+                        isLoading = true
+                        try { api.loadAndConnect(); refreshCommon() } catch (e: Exception) { statusMessage = e.message }
+                        isLoading = false
                     }
                 },
-                onToggle = { uid ->
-                    scope.launch { try { api.toggleTask(uid); refresh() } catch(e: Exception) { statusMessage = e.message } }
-                },
-                onDelete = { uid ->
-                    scope.launch { try { api.deleteTask(uid); refresh() } catch (e: Exception) { statusMessage = e.message } }
-                },
-                onCalendarToggleVisibility = { href, visible ->
-                    scope.launch {
-                        try { api.setCalendarVisibility(href, visible); refresh() } catch(e: Exception) { statusMessage = e.message }
-                    }
-                },
-                onCalendarSetDefault = { href ->
-                    scope.launch {
-                        try { api.setDefaultCalendar(href); refresh() } catch(e: Exception) { statusMessage = e.message }
-                    }
-                },
+                onSettings = { navController.navigate("settings") },
                 onTaskClick = { uid -> navController.navigate("detail/$uid") },
-                onSettings = { navController.navigate("settings") }
+                onDataChanged = { refreshCommon() }
             )
         }
         composable("detail/{uid}") { backStackEntry ->
             val uid = backStackEntry.arguments?.getString("uid")
-            val task = tasks.find { it.uid == uid }
-            if (task != null) {
+            if (uid != null) {
                 TaskDetailScreen(
-                    task = task,
-                    onSave = { smart, desc ->
-                        scope.launch {
-                            try {
-                                api.updateTaskSmart(task.uid, smart)
-                                api.updateTaskDescription(task.uid, desc)
-                                refresh()
-                                navController.popBackStack()
-                            } catch(e: Exception) { statusMessage = e.message }
-                        }
-                    },
-                    onBack = { navController.popBackStack() }
+                    api = api,
+                    uid = uid,
+                    calendars = calendars,
+                    onBack = { navController.popBackStack(); refreshCommon() }
                 )
             }
         }
         composable("settings") {
-            SettingsScreen(api = api, onBack = { navController.popBackStack(); refresh() })
+            SettingsScreen(api = api, onBack = { navController.popBackStack() })
         }
     }
 }
@@ -169,103 +139,130 @@ fun CfaitNavHost(api: CfaitMobile) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
-    tasks: List<MobileTask>,
+    api: CfaitMobile,
     calendars: List<MobileCalendar>,
+    tags: List<MobileTag>,
     defaultCalHref: String?,
-    hideCompleted: Boolean,
     isLoading: Boolean,
-    onRefresh: () -> Unit,
-    onAddTask: (String) -> Unit,
-    onToggle: (String) -> Unit,
-    onDelete: (String) -> Unit,
-    onCalendarToggleVisibility: (String, Boolean) -> Unit,
-    onCalendarSetDefault: (String) -> Unit,
+    onGlobalRefresh: () -> Unit,
+    onSettings: () -> Unit,
     onTaskClick: (String) -> Unit,
-    onSettings: () -> Unit
+    onDataChanged: () -> Unit
 ) {
-    var filterTag by remember { mutableStateOf<String?>(null) }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    var sidebarTab by remember { mutableIntStateOf(0) } // 0 = Calendars, 1 = Tags
+    
+    // State driven by Rust core
+    var tasks by remember { mutableStateOf<List<MobileTask>>(emptyList()) }
+    
+    // Filter inputs
+    var searchQuery by remember { mutableStateOf("") }
+    var filterTag by remember { mutableStateOf<String?>(null) }
+    var isSearchActive by remember { mutableStateOf(false) }
     var newTaskText by remember { mutableStateOf("") }
 
-    val allTags = tasks.flatMap { it.categories }.distinct().sorted()
-
-    val displayTasks = tasks
-        .filter { task ->
-            (filterTag == null || task.categories.contains(filterTag)) &&
-            (!hideCompleted || !task.isDone)
+    // Fetch tasks from Rust whenever filters change or refresh is triggered
+    fun updateTaskList() {
+        scope.launch {
+            try {
+                tasks = api.getViewTasks(filterTag, searchQuery)
+            } catch (e: Exception) { }
         }
-        .sortedWith(compareBy({ it.isDone }, { if (it.priority == 0.toUByte()) 10 else it.priority.toInt() }))
+    }
+
+    LaunchedEffect(searchQuery, filterTag, isLoading) { updateTaskList() }
+
+    // Actions
+    fun toggleTask(uid: String) = scope.launch { try { api.toggleTask(uid); updateTaskList(); onDataChanged() } catch (_: Exception){} }
+    fun deleteTask(uid: String) = scope.launch { try { api.deleteTask(uid); updateTaskList(); onDataChanged() } catch (_: Exception){} }
+    fun addTask(txt: String) = scope.launch { try { api.addTaskSmart(txt); updateTaskList(); onDataChanged() } catch (_: Exception){} }
 
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
             ModalDrawerSheet {
-                // Use LazyColumn to make the drawer scrollable
-                LazyColumn(modifier = Modifier.fillMaxHeight().width(300.dp)) {
-                    item {
-                        Text("Calendars", modifier = Modifier.padding(16.dp), fontWeight = FontWeight.Bold)
+                Column(modifier = Modifier.fillMaxHeight().width(300.dp)) {
+                    // Header Tabs
+                    TabRow(selectedTabIndex = sidebarTab) {
+                        Tab(
+                            selected = sidebarTab == 0,
+                            onClick = { sidebarTab = 0 },
+                            text = { Text("Calendars") },
+                            icon = { NfIcon(NfIcons.CALENDAR) }
+                        )
+                        Tab(
+                            selected = sidebarTab == 1,
+                            onClick = { sidebarTab = 1 },
+                            text = { Text("Tags") },
+                            icon = { NfIcon(NfIcons.TAG) }
+                        )
                     }
-                    items(calendars) { cal ->
-                        val isDefault = cal.href == defaultCalHref
-                        // Custom Row for split interaction
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onCalendarSetDefault(cal.href) } // Click row to set default
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // 1. Icon: Visibility Toggle
-                            IconButton(
-                                onClick = { onCalendarToggleVisibility(cal.href, !cal.isVisible) },
-                                modifier = Modifier.size(24.dp)
-                            ) {
-                                NfIcon(
-                                    if (cal.isVisible) NfIcons.VISIBLE else NfIcons.HIDDEN,
-                                    color = if (cal.isVisible) MaterialTheme.colorScheme.onSurface else Color.Gray
+
+                    // Content
+                    LazyColumn {
+                        if (sidebarTab == 0) {
+                            items(calendars) { cal ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { 
+                                            api.setDefaultCalendar(cal.href) 
+                                            onDataChanged()
+                                        }
+                                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    IconButton(
+                                        onClick = { 
+                                            api.setCalendarVisibility(cal.href, !cal.isVisible)
+                                            onDataChanged()
+                                            updateTaskList()
+                                        },
+                                        modifier = Modifier.size(24.dp)
+                                    ) {
+                                        NfIcon(if (cal.isVisible) NfIcons.VISIBLE else NfIcons.HIDDEN)
+                                    }
+                                    Spacer(Modifier.width(12.dp))
+                                    Text(
+                                        text = cal.name,
+                                        modifier = Modifier.weight(1f),
+                                        fontWeight = if (cal.href == defaultCalHref) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (cal.href == defaultCalHref) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        } else {
+                            item {
+                                NavigationDrawerItem(
+                                    label = { Text("All Tasks") },
+                                    selected = filterTag == null,
+                                    onClick = { filterTag = null; scope.launch { drawerState.close() } },
+                                    icon = { NfIcon(NfIcons.TAG) },
+                                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
                                 )
                             }
-                            
-                            Spacer(Modifier.width(12.dp))
-                            
-                            // 2. Name: Set Default
-                            Text(
-                                text = cal.name,
-                                modifier = Modifier.weight(1f),
-                                fontWeight = if (isDefault) FontWeight.Bold else FontWeight.Normal,
-                                color = if (isDefault) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                            )
-
-                            // 3. Indicator for Default (Floppy Disk)
-                            if (isDefault) {
-                                NfIcon(NfIcons.WRITE_TARGET, color = MaterialTheme.colorScheme.primary)
-                            } else if (cal.isLocal) {
-                                Text("Local", fontSize = 10.sp, color = Color.Gray)
+                            items(tags) { tag ->
+                                val displayName = if (tag.isUncategorized) "Uncategorized" else "#${tag.name}"
+                                val displayColor = if (tag.isUncategorized) Color.Gray else getTagColor(tag.name)
+                                
+                                NavigationDrawerItem(
+                                    label = { 
+                                        Row {
+                                            Text(displayName, modifier = Modifier.weight(1f))
+                                            Text("${tag.count}", color = Color.Gray, fontSize = 12.sp)
+                                        }
+                                    },
+                                    selected = if (tag.isUncategorized) filterTag == ":::uncategorized:::" else filterTag == tag.name,
+                                    onClick = { 
+                                        filterTag = if (tag.isUncategorized) ":::uncategorized:::" else tag.name
+                                        scope.launch { drawerState.close() } 
+                                    },
+                                    icon = { NfIcon(NfIcons.TAG, color = displayColor) },
+                                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                                )
                             }
                         }
-                    }
-                    
-                    item { Divider(Modifier.padding(vertical = 8.dp)) }
-                    item { Text("Filters", modifier = Modifier.padding(16.dp), fontWeight = FontWeight.Bold) }
-                    
-                    item {
-                        NavigationDrawerItem(
-                            label = { Text("All Tasks") },
-                            selected = filterTag == null,
-                            onClick = { filterTag = null; scope.launch { drawerState.close() } },
-                            icon = { NfIcon(NfIcons.TAG) },
-                            modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
-                        )
-                    }
-                    items(allTags) { tag ->
-                        NavigationDrawerItem(
-                            label = { Text("#$tag") },
-                            selected = filterTag == tag,
-                            onClick = { filterTag = tag; scope.launch { drawerState.close() } },
-                            icon = { NfIcon(NfIcons.TAG, color = getTagColor(tag)) },
-                            modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
-                        )
                     }
                 }
             }
@@ -273,17 +270,42 @@ fun HomeScreen(
     ) {
         Scaffold(
             topBar = {
-                TopAppBar(
-                    title = { Text(if (filterTag == null) "Cfait" else "#$filterTag") },
-                    navigationIcon = {
-                        IconButton(onClick = { scope.launch { drawerState.open() } }) { NfIcon(NfIcons.MENU, 20.sp) }
-                    },
-                    actions = {
-                        if (isLoading) CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                        else IconButton(onClick = onRefresh) { NfIcon(NfIcons.REFRESH, 18.sp) }
-                        IconButton(onClick = onSettings) { NfIcon(NfIcons.SETTINGS, 20.sp) }
-                    }
-                )
+                if (isSearchActive) {
+                    TopAppBar(
+                        title = {
+                            TextField(
+                                value = searchQuery,
+                                onValueChange = { searchQuery = it },
+                                placeholder = { Text("Search (e.g. is:done #work)") },
+                                singleLine = true,
+                                colors = TextFieldDefaults.colors(
+                                    focusedContainerColor = Color.Transparent,
+                                    unfocusedContainerColor = Color.Transparent,
+                                    focusedIndicatorColor = Color.Transparent,
+                                    unfocusedIndicatorColor = Color.Transparent
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        },
+                        navigationIcon = {
+                            IconButton(onClick = { isSearchActive = false; searchQuery = "" }) { NfIcon(NfIcons.BACK, 20.sp) }
+                        }
+                    )
+                } else {
+                    val title = if (filterTag == null) "Cfait" else if (filterTag == ":::uncategorized:::") "Uncategorized" else "#$filterTag"
+                    TopAppBar(
+                        title = { Text(title) },
+                        navigationIcon = {
+                            IconButton(onClick = { scope.launch { drawerState.open() } }) { NfIcon(NfIcons.MENU, 20.sp) }
+                        },
+                        actions = {
+                            IconButton(onClick = { isSearchActive = true }) { NfIcon(NfIcons.SEARCH, 18.sp) }
+                            if (isLoading) CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                            else IconButton(onClick = onGlobalRefresh) { NfIcon(NfIcons.REFRESH, 18.sp) }
+                            IconButton(onClick = onSettings) { NfIcon(NfIcons.SETTINGS, 20.sp) }
+                        }
+                    )
+                }
             },
             bottomBar = {
                 Surface(tonalElevation = 3.dp) {
@@ -294,43 +316,51 @@ fun HomeScreen(
                         OutlinedTextField(
                             value = newTaskText,
                             onValueChange = { newTaskText = it },
-                            placeholder = { Text("!1 @tomorrow Buy milk") },
+                            placeholder = { Text("!1 @tomorrow Buy cat food") },
                             modifier = Modifier.weight(1f),
                             singleLine = true
                         )
                         Spacer(Modifier.width(8.dp))
-                        Button(onClick = { if (newTaskText.isNotBlank()) { onAddTask(newTaskText); newTaskText = "" } }) {
+                        Button(onClick = { if (newTaskText.isNotBlank()) { addTask(newTaskText); newTaskText = "" } }) {
                             NfIcon(NfIcons.ADD)
                         }
                     }
                 }
             }
         ) { padding ->
-            LazyColumn(modifier = Modifier.padding(padding).fillMaxSize(), contentPadding = PaddingValues(bottom = 80.dp)) {
-                items(displayTasks, key = { it.uid }) { task ->
-                    TaskRow(task, onToggle, onDelete, onTaskClick)
+            LazyColumn(
+                modifier = Modifier.padding(padding).fillMaxSize(), 
+                contentPadding = PaddingValues(bottom = 80.dp)
+            ) {
+                items(tasks, key = { it.uid }) { task ->
+                    TaskRow(task, { toggleTask(task.uid) }, { deleteTask(task.uid) }, onTaskClick)
                 }
             }
         }
     }
 }
 
-// --- TASK ROW ---
+// ... [TaskRow, TaskDetailScreen, SettingsScreen, Utils remain the same] ...
+// (I am including them below for a complete file)
 
 @Composable
-fun TaskRow(task: MobileTask, onToggle: (String) -> Unit, onDelete: (String) -> Unit, onClick: (String) -> Unit) {
+fun TaskRow(task: MobileTask, onToggle: () -> Unit, onDelete: () -> Unit, onClick: (String) -> Unit) {
     val prioColor = getPriorityColor(task.priority.toInt())
     
+    // Indentation padding calculation
+    val startPadding = (task.depth.toInt() * 16).dp
+
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .padding(start = 16.dp + startPadding, end = 16.dp, top = 4.dp, bottom = 4.dp)
             .clickable { onClick(task.uid) },
         border = BorderStroke(1.dp, if (task.isDone) Color.Gray else prioColor),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Checkbox(checked = task.isDone, onCheckedChange = { onToggle(task.uid) })
+            Checkbox(checked = task.isDone, onCheckedChange = { onToggle() })
+            
             Column(modifier = Modifier.weight(1f).padding(horizontal = 8.dp)) {
                 Text(
                     text = task.summary,
@@ -338,8 +368,14 @@ fun TaskRow(task: MobileTask, onToggle: (String) -> Unit, onDelete: (String) -> 
                     color = if (task.isDone) Color.Gray else MaterialTheme.colorScheme.onSurface,
                     textDecoration = if (task.isDone) TextDecoration.LineThrough else null
                 )
+                
+                // Tags and Metadata Row
                 Row(modifier = Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    if (task.priority > 0.toUByte()) {
+                    if (task.isBlocked) {
+                        NfIcon(NfIcons.BLOCK, 12.sp, MaterialTheme.colorScheme.error)
+                        Spacer(Modifier.width(4.dp))
+                    }
+                    if (task.priority.toInt() > 0) {
                         Text("!${task.priority}", color = prioColor, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(end = 8.dp))
                     }
                     if (!task.dueDateIso.isNullOrEmpty()) {
@@ -350,23 +386,18 @@ fun TaskRow(task: MobileTask, onToggle: (String) -> Unit, onDelete: (String) -> 
                         NfIcon(NfIcons.REPEAT, 12.sp, Color.Gray)
                         Spacer(Modifier.width(8.dp))
                     }
-                    if (task.description.isNotEmpty()) {
-                        // Use generic document icon or similar
-                        NfIcon("\uf0f6", 12.sp, Color.Gray) 
-                        Spacer(Modifier.width(8.dp))
-                    }
                     task.categories.forEach { tag ->
                         Surface(
-                            color = MaterialTheme.colorScheme.secondaryContainer,
+                            color = getTagColor(tag).copy(alpha = 0.2f),
                             shape = RoundedCornerShape(4.dp),
                             modifier = Modifier.padding(end = 4.dp)
                         ) {
-                            Text("#$tag", fontSize = 10.sp, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp), color = MaterialTheme.colorScheme.onSecondaryContainer)
+                            Text("#$tag", fontSize = 10.sp, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
                         }
                     }
                 }
             }
-            IconButton(onClick = { onDelete(task.uid) }) {
+            IconButton(onClick = onDelete) {
                 NfIcon(NfIcons.DELETE, 16.sp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f))
             }
         }
@@ -375,9 +406,50 @@ fun TaskRow(task: MobileTask, onToggle: (String) -> Unit, onDelete: (String) -> 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TaskDetailScreen(task: MobileTask, onSave: (String, String) -> Unit, onBack: () -> Unit) {
-    var smartInput by remember { mutableStateOf(task.smartString) }
-    var description by remember { mutableStateOf(task.description) }
+fun TaskDetailScreen(api: CfaitMobile, uid: String, calendars: List<MobileCalendar>, onBack: () -> Unit) {
+    // We need to fetch the specific task details async
+    var task by remember { mutableStateOf<MobileTask?>(null) }
+    val scope = rememberCoroutineScope()
+    var smartInput by remember { mutableStateOf("") }
+    var description by remember { mutableStateOf("") }
+    var showMoveDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(uid) {
+        // Fetch all view tasks and find current (a bit inefficient but consistent with API)
+        val all = api.getViewTasks(null, "")
+        task = all.find { it.uid == uid }
+        task?.let {
+            smartInput = it.smartString
+            description = it.description
+        }
+    }
+
+    if (task == null) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        return
+    }
+
+    if (showMoveDialog) {
+        AlertDialog(
+            onDismissRequest = { showMoveDialog = false },
+            title = { Text("Move to Calendar") },
+            text = {
+                LazyColumn {
+                    items(calendars) { cal ->
+                        if (cal.href != task!!.calendarHref) {
+                            TextButton(
+                                onClick = {
+                                    scope.launch { api.moveTask(uid, cal.href); showMoveDialog = false; onBack() }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text(cal.name) }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showMoveDialog = false }) { Text("Cancel") } }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -385,7 +457,14 @@ fun TaskDetailScreen(task: MobileTask, onSave: (String, String) -> Unit, onBack:
                 title = { Text("Edit Task") },
                 navigationIcon = { IconButton(onClick = onBack) { NfIcon(NfIcons.BACK, 20.sp) } },
                 actions = {
-                    TextButton(onClick = { onSave(smartInput, description) }) { Text("Save") }
+                    TextButton(onClick = { showMoveDialog = true }) { Text("Move") }
+                    TextButton(onClick = { 
+                        scope.launch {
+                            api.updateTaskSmart(uid, smartInput)
+                            api.updateTaskDescription(uid, description)
+                            onBack()
+                        }
+                    }) { Text("Save") }
                 }
             )
         }
@@ -423,15 +502,24 @@ fun SettingsScreen(api: CfaitMobile, onBack: () -> Unit) {
     var insecure by remember { mutableStateOf(false) }
     var hideCompleted by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf("") }
+    var aliases by remember { mutableStateOf<Map<String, List<String>>>(emptyMap()) }
+    
+    // Alias inputs
+    var newAliasKey by remember { mutableStateOf("") }
+    var newAliasTags by remember { mutableStateOf("") }
+
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) {
+    fun reload() {
         val cfg = api.getConfig()
         url = cfg.url
         user = cfg.username
         insecure = cfg.allowInsecure
         hideCompleted = cfg.hideCompleted
+        aliases = cfg.tagAliases
     }
+
+    LaunchedEffect(Unit) { reload() }
 
     Scaffold(
         topBar = {
@@ -441,24 +529,57 @@ fun SettingsScreen(api: CfaitMobile, onBack: () -> Unit) {
             )
         }
     ) { p ->
-        Column(modifier = Modifier.padding(p).padding(16.dp)) {
-            OutlinedTextField(value = url, onValueChange = { url = it }, label = { Text("CalDAV URL") }, modifier = Modifier.fillMaxWidth())
-            Spacer(Modifier.height(8.dp))
-            OutlinedTextField(value = user, onValueChange = { user = it }, label = { Text("Username") }, modifier = Modifier.fillMaxWidth())
-            Spacer(Modifier.height(8.dp))
-            OutlinedTextField(value = pass, onValueChange = { pass = it }, label = { Text("Password") }, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
-            Spacer(Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(checked = insecure, onCheckedChange = { insecure = it }); Text("Allow Insecure SSL") }
-            Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(checked = hideCompleted, onCheckedChange = { hideCompleted = it }); Text("Hide Completed Tasks") }
-            Spacer(Modifier.height(16.dp))
-            Button(onClick = {
-                scope.launch {
-                    status = "Saving..."
-                    try { api.saveConfig(url, user, pass, insecure, hideCompleted); status = api.connect(url, user, pass, insecure) } catch (e: Exception) { status = "Error: ${e.message}" }
+        LazyColumn(modifier = Modifier.padding(p).padding(16.dp)) {
+            item {
+                Text("Connection", fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 8.dp))
+                OutlinedTextField(value = url, onValueChange = { url = it }, label = { Text("CalDAV URL") }, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(value = user, onValueChange = { user = it }, label = { Text("Username") }, modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(value = pass, onValueChange = { pass = it }, label = { Text("Password") }, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
+                Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(checked = insecure, onCheckedChange = { insecure = it }); Text("Allow Insecure SSL") }
+                Row(verticalAlignment = Alignment.CenterVertically) { Checkbox(checked = hideCompleted, onCheckedChange = { hideCompleted = it }); Text("Hide Completed Tasks") }
+                
+                Button(onClick = {
+                    scope.launch {
+                        status = "Saving..."
+                        try { 
+                            api.saveConfig(url, user, pass, insecure, hideCompleted)
+                            status = api.connect(url, user, pass, insecure) 
+                        } catch (e: Exception) { status = "Error: ${e.message}" }
+                    }
+                }, modifier = Modifier.fillMaxWidth()) { Text("Save & Connect") }
+                
+                Text(status, color = if (status.startsWith("Error")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
+                
+                Divider(Modifier.padding(vertical = 16.dp))
+                Text("Tag Aliases", fontWeight = FontWeight.Bold)
+            }
+
+            items(aliases.keys.toList()) { key ->
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 4.dp)) {
+                    Text("#$key", fontWeight = FontWeight.Bold, modifier = Modifier.width(80.dp))
+                    Text("→", modifier = Modifier.padding(horizontal = 8.dp))
+                    Text(aliases[key]?.joinToString(", ") ?: "", modifier = Modifier.weight(1f))
+                    IconButton(onClick = { 
+                        scope.launch { api.removeAlias(key); reload() } 
+                    }) { NfIcon(NfIcons.CROSS, 16.sp, MaterialTheme.colorScheme.error) }
                 }
-            }, modifier = Modifier.fillMaxWidth()) { Text("Save & Connect") }
-            Spacer(Modifier.height(16.dp))
-            Text(status, color = if (status.startsWith("Error")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
+            }
+
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+                    OutlinedTextField(value = newAliasKey, onValueChange = { newAliasKey = it }, label = { Text("Alias") }, modifier = Modifier.weight(1f))
+                    Spacer(Modifier.width(8.dp))
+                    OutlinedTextField(value = newAliasTags, onValueChange = { newAliasTags = it }, label = { Text("Tags (comma)") }, modifier = Modifier.weight(1f))
+                    IconButton(onClick = {
+                        if (newAliasKey.isNotBlank() && newAliasTags.isNotBlank()) {
+                            val tags = newAliasTags.split(",").map { it.trim().trimStart('#') }.filter { it.isNotEmpty() }
+                            scope.launch { api.addAlias(newAliasKey.trimStart('#'), tags); newAliasKey=""; newAliasTags=""; reload() }
+                        }
+                    }) { NfIcon(NfIcons.ADD) }
+                }
+            }
         }
     }
 }
@@ -467,12 +588,7 @@ fun SettingsScreen(api: CfaitMobile, onBack: () -> Unit) {
 
 @Composable
 fun NfIcon(text: String, size: androidx.compose.ui.unit.TextUnit = 24.sp, color: Color = MaterialTheme.colorScheme.onSurface) {
-    Text(
-        text = text,
-        fontFamily = NerdFont,
-        fontSize = size,
-        color = color
-    )
+    Text(text = text, fontFamily = NerdFont, fontSize = size, color = color)
 }
 
 fun getPriorityColor(prio: Int): Color {
@@ -481,11 +597,8 @@ fun getPriorityColor(prio: Int): Color {
     }
 }
 
-// Generate deterministic colors from tag string (Port of Rust logic)
 fun getTagColor(tag: String): Color {
     val hash = tag.hashCode()
     val h = (kotlin.math.abs(hash) % 360).toFloat()
-    val s = 0.6f // Fixed saturation
-    val l = 0.5f // Fixed lightness
-    return Color.hsv(h, s, l)
+    return Color.hsv(h, 0.6f, 0.5f)
 }
