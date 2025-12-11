@@ -117,22 +117,44 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
                 .map(|c| {
                     let is_target = Some(&c.href) == state.active_cal_href.as_ref();
                     let is_visible = !state.hidden_calendars.contains(&c.href);
-                    let prefix = if is_target { ">" } else { " " };
-                    let check = if is_visible { "[x]" } else { "[ ]" };
-                    let color = if is_target {
-                        Color::Yellow
+
+                    // Logic: If visible, use calendar color. If hidden, force dark gray.
+                    let cal_color_style = if is_visible {
+                        if let Some(hex) = &c.color
+                            && let Some((r, g, b)) = color_utils::parse_hex_to_u8(hex)
+                        {
+                            Style::default().fg(Color::Rgb(r, g, b))
+                        } else {
+                            Style::default()
+                        }
                     } else {
-                        Color::Reset
+                        Style::default().fg(Color::DarkGray)
                     };
-                    let style = if is_target {
-                        Style::default().fg(color).add_modifier(Modifier::BOLD)
+
+                    let prefix = if is_target { ">" } else { " " };
+                    let check_mark = if is_visible { "x" } else { " " };
+
+                    // Build row with colored brackets
+                    let mut spans = vec![
+                        Span::raw(format!("{} ", prefix)),
+                        Span::styled("[", cal_color_style),
+                        Span::raw(check_mark),
+                        Span::styled("]", cal_color_style),
+                    ];
+
+                    let text_style = if is_target {
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD)
                     } else if !is_visible {
                         Style::default().fg(Color::DarkGray)
                     } else {
-                        Style::default().fg(color)
+                        Style::default()
                     };
-                    ListItem::new(Line::from(format!("{} {} {}", prefix, check, c.name)))
-                        .style(style)
+
+                    spans.push(Span::styled(format!(" {}", c.name), text_style));
+
+                    ListItem::new(Line::from(spans))
                 })
                 .collect();
             (" Calendars [1] ".to_string(), items)
@@ -194,7 +216,6 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
     f.render_stateful_widget(sidebar, h_chunks[0], &mut state.cal_state);
 
     // --- Task List ---
-    // --- Task List ---
     let list_inner_width = main_chunks[0].width.saturating_sub(2) as usize;
 
     let task_items: Vec<ListItem> = state
@@ -205,7 +226,6 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
             let base_style = if is_blocked {
                 Style::default().fg(Color::DarkGray)
             } else {
-                // Priority Gradient: Red (Hot) -> Yellow (Normal) -> Purple/Slate (Cold)
                 match t.priority {
                     // 1: Critical -> Red
                     1 => Style::default().fg(Color::Red),
@@ -217,20 +237,31 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
                     4 => Style::default().fg(Color::Rgb(255, 190, 0)),
                     // 5: Normal -> Yellow
                     5 => Style::default().fg(Color::Yellow),
-                    // 6: Med-Low -> Pale Goldenrod / Khaki (Desaturating)
+                    // 6: Med-Low -> Pale Goldenrod / Khaki
                     6 => Style::default().fg(Color::Rgb(240, 230, 140)),
-                    // 7: Low -> Light Steel Blue (Cooling down)
+                    // 7: Low -> Light Steel Blue
                     7 => Style::default().fg(Color::Rgb(176, 196, 222)),
                     // 8: Very Low -> Medium Purple / Slate
                     8 => Style::default().fg(Color::Rgb(147, 112, 219)),
                     // 9: Lowest -> Muted Lavender / Grey-Purple
                     9 => Style::default().fg(Color::Rgb(170, 150, 180)),
-                    // 0: Unset -> White
                     _ => Style::default(),
                 }
             };
 
-            let checkbox = t.checkbox_symbol();
+            // Bracket Color logic
+            let mut bracket_style = Style::default();
+            if let Some(cal) = state.calendars.iter().find(|c| c.href == t.calendar_href) {
+                if let Some(hex) = &cal.color
+                    && let Some((r, g, b)) = color_utils::parse_hex_to_u8(hex)
+                {
+                    bracket_style = Style::default().fg(Color::Rgb(r, g, b));
+                }
+            }
+
+            let full_symbol = t.checkbox_symbol(); // e.g. "[x]"
+            let inner_char = &full_symbol[1..2]; // e.g. "x"
+
             let due_str = t
                 .due
                 .map(|d| format!(" ({})", d.format("%d/%m")))
@@ -244,7 +275,7 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
             };
             let recur_str = if t.rrule.is_some() { " (R)" } else { "" };
 
-            // --- NEW: Calculate tags to hide based on aliases ---
+            // Alias Hiding Logic
             let mut hidden_tags = std::collections::HashSet::new();
             for cat in &t.categories {
                 let mut search = cat.as_str();
@@ -266,28 +297,40 @@ pub fn draw(f: &mut Frame, state: &mut AppState) {
                 .iter()
                 .filter(|c| !hidden_tags.contains(*c))
                 .collect();
-            // --- END NEW ---
 
-            // Layout Calculation (uses visible_cats now)
+            // Layout Calculation
             let tags_str_len: usize = visible_cats.iter().map(|c| c.len() + 2).sum();
 
-            let left_text = format!(
-                "{}{}{} {}{}{}{}",
-                indent,
-                checkbox,
+            // Manually calc length because we are building spans manually
+            let raw_text = format!(
+                "[{}] {}{}{}{}{}",
+                inner_char,
                 if is_blocked { "[B] " } else { " " },
                 t.summary,
                 dur_str,
                 due_str,
                 recur_str
             );
-            let total_len = left_text.chars().count() + tags_str_len;
+
+            // "  " indent + brackets + inner + etc
+            let total_len = indent.len() + raw_text.len() + tags_str_len;
             let padding_len = list_inner_width.saturating_sub(total_len);
             let padding = " ".repeat(padding_len);
 
-            let mut spans = vec![Span::styled(left_text, base_style), Span::raw(padding)];
+            // Construct spans for colorful brackets
+            let mut spans = vec![
+                Span::raw(indent),
+                Span::styled("[", bracket_style),
+                Span::styled(inner_char, base_style),
+                Span::styled("]", bracket_style),
+                Span::raw(if is_blocked { " [B] " } else { " " }),
+                Span::styled(
+                    format!("{}{}{}{}", t.summary, dur_str, due_str, recur_str),
+                    base_style,
+                ),
+                Span::raw(padding),
+            ];
 
-            // Use visible_cats for rendering
             for cat in visible_cats {
                 let (r, g, b) = color_utils::generate_color(cat);
                 let color = Color::Rgb((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8);

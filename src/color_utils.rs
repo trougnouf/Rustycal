@@ -55,3 +55,27 @@ pub fn is_dark(r: f32, g: f32, b: f32) -> bool {
     let brightness = 0.299 * r + 0.587 * g + 0.114 * b;
     brightness < 0.5
 }
+
+pub fn parse_hex_to_floats(hex: &str) -> Option<(f32, f32, f32)> {
+    let hex = hex.trim_start_matches('#');
+    if hex.len() < 6 {
+        return None;
+    }
+    let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+    let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+    let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+
+    Some((r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0))
+}
+
+pub fn parse_hex_to_u8(hex: &str) -> Option<(u8, u8, u8)> {
+    let hex = hex.trim_start_matches('#');
+    if hex.len() < 6 {
+        return None;
+    }
+    let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+    let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+    let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+
+    Some((r, g, b))
+}

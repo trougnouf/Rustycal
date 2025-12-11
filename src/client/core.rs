@@ -25,6 +25,8 @@ use tower_http::auth::AddAuthorization;
 use uuid::Uuid;
 
 pub const GET_CTAG: PropertyName = PropertyName::new("http://calendarserver.org/ns/", "getctag");
+pub const APPLE_COLOR: PropertyName =
+    PropertyName::new("http://apple.com/ns/ical/", "calendar-color");
 
 type HttpsClient = AddAuthorization<
     Client<
@@ -217,10 +219,17 @@ impl RustyClient {
                     .and_then(|r| r.value)
                     .unwrap_or_else(|| col.href.clone());
 
+                // Fetch Color
+                let color = client
+                    .request(GetProperty::new(&col.href, &APPLE_COLOR))
+                    .await
+                    .ok()
+                    .and_then(|r| r.value);
+
                 calendars.push(CalendarListEntry {
                     name,
                     href: col.href,
-                    color: None,
+                    color, // Store it
                 });
             }
             Ok(calendars)

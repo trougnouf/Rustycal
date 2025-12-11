@@ -470,7 +470,7 @@ pub fn view_task_row<'a>(
         );
     }
 
-    let (icon_char, bg_color, border_color) = match task.status {
+    let (icon_char, bg_color, default_border_color) = match task.status {
         crate::model::TaskStatus::InProcess => (
             icon::PLAY_FA,
             Color::from_rgb(0.6, 0.8, 0.6),
@@ -490,6 +490,19 @@ pub fn view_task_row<'a>(
             (' ', Color::TRANSPARENT, Color::from_rgb(0.5, 0.5, 0.5))
         }
     };
+
+    // --- Calendar Color Logic ---
+    let mut custom_border_color = default_border_color;
+
+    // Find the calendar this task belongs to
+    if let Some(cal) = app.calendars.iter().find(|c| c.href == task.calendar_href) {
+        if let Some(hex) = &cal.color {
+            if let Some((r, g, b)) = color_utils::parse_hex_to_floats(hex) {
+                custom_border_color = Color::from_rgb(r, g, b);
+            }
+        }
+    }
+
     let status_btn = button(
         container(if icon_char != ' ' {
             icon::icon(icon_char).size(12).color(Color::WHITE)
@@ -510,7 +523,8 @@ pub fn view_task_row<'a>(
             background: Some(bg_color.into()),
             text_color: Color::WHITE,
             border: iced::Border {
-                color: border_color,
+                // Apply the custom border color here
+                color: custom_border_color,
                 width: 1.0,
                 radius: 4.0.into(),
             },
@@ -519,7 +533,12 @@ pub fn view_task_row<'a>(
         match status {
             iced::widget::button::Status::Hovered => button::Style {
                 border: iced::Border {
-                    color: Color::WHITE,
+                    // Keep border visible on hover even if task is unchecked
+                    color: if icon_char == ' ' {
+                        custom_border_color
+                    } else {
+                        Color::WHITE
+                    },
                     width: 1.0,
                     radius: 4.0.into(),
                 },

@@ -46,16 +46,32 @@ pub fn view_sidebar_calendars(app: &GuiApp) -> Element<'_, Message> {
             .iter()
             .filter(|c| !app.disabled_calendars.contains(&c.href))
             .map(|cal| {
-                // ... [Icon selection: No Change] ...
                 let is_visible = !app.hidden_calendars.contains(&cal.href);
                 let is_target = app.active_cal_href.as_ref() == Some(&cal.href);
+
+                // --- Color Resolution ---
+                let cal_color = cal
+                    .color
+                    .as_ref()
+                    .and_then(|c| color_utils::parse_hex_to_floats(c))
+                    .map(|(r, g, b)| Color::from_rgb(r, g, b));
+
                 let (icon_char, icon_color) = if is_target {
-                    (icon::CONTENT_SAVE_EDIT, Color::from_rgb(1.0, 0.6, 0.0))
+                    (
+                        icon::CONTENT_SAVE_EDIT,
+                        // Use cal color if present, else Orange
+                        cal_color.unwrap_or(Color::from_rgb(1.0, 0.6, 0.0)),
+                    )
                 } else if is_visible {
-                    (icon::EYE, Color::from_rgb(0.7, 0.7, 0.7))
+                    (
+                        icon::EYE,
+                        // Use cal color if present, else Grey
+                        cal_color.unwrap_or(Color::from_rgb(0.7, 0.7, 0.7)),
+                    )
                 } else {
                     (icon::EYE_CLOSED, Color::from_rgb(0.4, 0.4, 0.4))
                 };
+                // ---------------------------------
 
                 let vis_btn = button(icon::icon(icon_char).size(16).style(move |_| text::Style {
                     color: Some(icon_color),
