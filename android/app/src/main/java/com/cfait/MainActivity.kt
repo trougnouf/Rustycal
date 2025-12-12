@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,12 +26,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -194,7 +198,6 @@ fun HomeScreen(
         scope.launch { try { tasks = api.getViewTasks(filterTag, searchQuery) } catch (_: Exception) { } }
     }
 
-    // FIX 1: Add calendars and tags to LaunchedEffect key
     LaunchedEffect(searchQuery, filterTag, isLoading, calendars, tags) { updateTaskList() }
 
     fun toggleTask(uid: String) = scope.launch { try { api.toggleTask(uid); updateTaskList(); onDataChanged() } catch (_: Exception){} }
@@ -351,9 +354,20 @@ fun HomeScreen(
             bottomBar = {
                 Surface(tonalElevation = 3.dp) {
                     Row(Modifier.padding(16.dp).navigationBarsPadding(), verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedTextField(value = newTaskText, onValueChange = { newTaskText = it }, placeholder = { Text("!1 @tomorrow Buy milk") }, modifier = Modifier.weight(1f), singleLine = true)
-                        Spacer(Modifier.width(8.dp))
-                        Button(onClick = { if (newTaskText.isNotBlank()) { addTask(newTaskText); newTaskText = "" } }) { NfIcon(NfIcons.ADD) }
+                        OutlinedTextField(
+                            value = newTaskText,
+                            onValueChange = { newTaskText = it },
+                            placeholder = { Text("!1 @tomorrow Buy milk") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions.Default.copy(imeAction = ImeAction.Send),
+                            keyboardActions = KeyboardActions(onSend = {
+                                if (newTaskText.isNotBlank()) {
+                                    addTask(newTaskText)
+                                    newTaskText = ""
+                                }
+                            })
+                        )
                     }
                 }
             }
@@ -480,7 +494,6 @@ fun TaskCheckbox(task: MobileTask, calColor: Color, onClick: () -> Unit) {
     }
 }
 
-// ... [TaskDetailScreen - Reuse from previous] ...
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TaskDetailScreen(api: CfaitMobile, uid: String, calendars: List<MobileCalendar>, onBack: () -> Unit) {
@@ -489,6 +502,7 @@ fun TaskDetailScreen(api: CfaitMobile, uid: String, calendars: List<MobileCalend
     var smartInput by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     var showMoveDialog by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     LaunchedEffect(uid) {
         val all = api.getViewTasks(null, "")
@@ -522,7 +536,17 @@ fun TaskDetailScreen(api: CfaitMobile, uid: String, calendars: List<MobileCalend
                 navigationIcon = { IconButton(onClick = onBack) { NfIcon(NfIcons.BACK, 20.sp) } },
                 actions = {
                     TextButton(onClick = { showMoveDialog = true }) { Text("Move") }
-                    TextButton(onClick = { scope.launch { api.updateTaskSmart(uid, smartInput); api.updateTaskDescription(uid, description); onBack() } }) { Text("Save") }
+                    TextButton(onClick = {
+                        scope.launch {
+                            try {
+                                api.updateTaskSmart(uid, smartInput)
+                                api.updateTaskDescription(uid, description)
+                                onBack() // Navigate back on success
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Failed to save: ${e.message}", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    }) { Text("Save") }
                 }
             )
         }
@@ -554,7 +578,6 @@ fun TaskDetailScreen(api: CfaitMobile, uid: String, calendars: List<MobileCalend
     }
 }
 
-// ... [SettingsScreen - Reuse from previous] ...
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(api: CfaitMobile, onBack: () -> Unit) {
@@ -587,11 +610,10 @@ fun SettingsScreen(api: CfaitMobile, onBack: () -> Unit) {
 
     fun save() {
         scope.launch { 
-            status = "Saving..."
+            status = "Connecting..."
             try { 
                 api.saveConfig(url, user, pass, insecure, hideCompleted, disabledSet.toList())
                 status = api.connect(url, user, pass, insecure) 
-                // FIX 2: Reload config and calendars immediately to reflect discovery
                 reload()
             } catch (e: Exception) { status = "Error: ${e.message}" } 
         }
